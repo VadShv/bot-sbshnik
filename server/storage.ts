@@ -8,8 +8,17 @@ import type {
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { eq, desc } from "drizzle-orm";
+import path from "path";
+import fs from "fs";
 
-const sqlite = new Database("data.db");
+// Путь к БД: по умолчанию data.db в корне, можно переопределить через DATABASE_PATH.
+// На Railway выставляем DATABASE_PATH=/data/data.db, где /data — persistent volume.
+const dbPath = process.env.DATABASE_PATH || "data.db";
+const dbDir = path.dirname(dbPath);
+if (dbDir && dbDir !== "." && !fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+const sqlite = new Database(dbPath);
 sqlite.pragma("journal_mode = WAL");
 
 // Миграция

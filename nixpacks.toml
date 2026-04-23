@@ -1,0 +1,13 @@
+# Nixpacks конфиг для Railway
+# Фиксируем Node.js 20 для стабильной сборки better-sqlite3 / pdfjs-dist
+[phases.setup]
+nixPkgs = ["nodejs_20", "python3", "gcc", "gnumake"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "node dist/index.cjs"

@@ -51,6 +51,18 @@ npm start
 | `BASIC_AUTH_PASS` | Пароль базовой HTTP-авторизации |
 | `PORT` | Порт сервера (по умолчанию `5000`) |
 
+## Деплой на Railway.app
+
+1. Откройте [railway.app](https://railway.app), войдите через GitHub
+2. **New Project → Deploy from GitHub repo** → выберите `VadShv/bot-sbshnik`
+3. Railway прочитает `railway.json` / `nixpacks.toml` и начнёт сборку
+4. В **Settings → Volumes** создайте volume на точку `/data` (для SQLite)
+5. В **Variables** добавьте:
+   - `DATABASE_PATH=/data/data.db`
+   - `YANDEX_API_KEY`, `YANDEX_FOLDER_ID`, `YANDEX_MODEL=yandexgpt`
+   - `BASIC_AUTH_USER`, `BASIC_AUTH_PASS`
+6. В **Settings → Networking → Generate Domain** для публичного URL
+
 ## Деплой на Render.com
 
 1. Залогиньтесь на [render.com](https://render.com), подключите GitHub-аккаунт
