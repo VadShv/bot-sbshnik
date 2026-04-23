@@ -3,7 +3,24 @@ import type { Finding, Evidence, VerificationStep, RedFlag, RecruiterAction, Sub
 const YANDEX_API_KEY = process.env.YANDEX_API_KEY || "";
 const YANDEX_FOLDER_ID = process.env.YANDEX_FOLDER_ID || "b1gncpokmh18knpjgadr";
 const YANDEX_MODEL = process.env.YANDEX_MODEL || "yandexgpt";
-const ENDPOINT = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion";
+
+// Два эндпоинта Yandex Cloud AI Studio:
+//   1) Foundation Models API (native) — для yandexgpt, yandexgpt-lite, llama, mistral и др.
+//   2) OpenAI-compatible API — обязательно для Qwen3, gpt-oss и новых open-source моделей.
+const ENDPOINT_NATIVE = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion";
+const ENDPOINT_OPENAI = "https://llm.api.cloud.yandex.net/v1/chat/completions";
+
+/** Нужно ли использовать OpenAI-совместимый эндпоинт для этой модели. */
+function requiresOpenAIApi(model: string): boolean {
+  const m = model.toLowerCase();
+  return (
+    m.startsWith("qwen") ||
+    m.startsWith("gpt-oss") ||
+    m.startsWith("deepseek") ||
+    m.startsWith("gemma") ||
+    m.includes("qwen3")
+  );
+}
 
 type YandexMessage = { role: "system" | "user" | "assistant"; text: string };
 
@@ -14,8 +31,24 @@ export async function yandexComplete(
   if (!YANDEX_API_KEY) {
     throw new Error("YANDEX_API_KEY не задан в окружении сервера.");
   }
+
+  const modelUri = `gpt://${YANDEX_FOLDER_ID}/${YANDEX_MODEL}/latest`;
+  const useOpenAI = requiresOpenAIApi(YANDEX_MODEL);
+
+  if (useOpenAI) {
+    return await completeViaOpenAI(modelUri, messages, opts);
+  }
+  return await completeViaNative(modelUri, messages, opts);
+}
+
+/** Вызов через native Yandex Foundation Models API (yandexgpt и др.). */
+async function completeViaNative(
+  modelUri: string,
+  messages: YandexMessage[],
+  opts: { temperature?: number; maxTokens?: number }
+): Promise<string> {
   const body = {
-    modelUri: `gpt://${YANDEX_FOLDER_ID}/${YANDEX_MODEL}/latest`,
+    modelUri,
     completionOptions: {
       stream: false,
       temperature: opts.temperature ?? 0.2,
@@ -25,7 +58,7 @@ export async function yandexComplete(
     messages,
   };
 
-  const res = await fetch(ENDPOINT, {
+  const res = await fetch(ENDPOINT_NATIVE, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -36,11 +69,50 @@ export async function yandexComplete(
 
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(`Yandex GPT error ${res.status}: ${txt}`);
+    throw new Error(`Yandex GPT (native) error ${res.status}: ${txt}`);
   }
   const data: any = await res.json();
   const text = data?.result?.alternatives?.[0]?.message?.text;
-  if (!text) throw new Error("Yandex GPT: пустой ответ");
+  if (!text) throw new Error("Yandex GPT (native): пустой ответ");
+  return text as string;
+}
+
+/** Вызов через OpenAI-совместимый API (Qwen3, gpt-oss и др.). */
+async function completeViaOpenAI(
+  modelUri: string,
+  messages: YandexMessage[],
+  opts: { temperature?: number; maxTokens?: number }
+): Promise<string> {
+  // Конвертация формата сообщений
+  const openaiMessages = messages.map((m) => ({ role: m.role, content: m.text }));
+
+  const body = {
+    model: modelUri,
+    messages: openaiMessages,
+    temperature: opts.temperature ?? 0.2,
+    max_tokens: opts.maxTokens ?? 2000,
+  };
+
+  const res = await fetch(ENDPOINT_OPENAI, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Api-Key ${YANDEX_API_KEY}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Yandex GPT (OpenAI API) error ${res.status}: ${txt}`);
+  }
+  const data: any = await res.json();
+  const choice = data?.choices?.[0]?.message;
+  // У gpt-oss может быть content=null при reasoning-ответе; у Qwen3 всегда конкретный текст в content.
+  const text: string | null | undefined = choice?.content ?? choice?.reasoning_content;
+  if (!text) {
+    throw new Error(`Yandex GPT (OpenAI API): пустой ответ. finish_reason=${data?.choices?.[0]?.finish_reason ?? "?"}`);
+  }
   return text as string;
 }
 
