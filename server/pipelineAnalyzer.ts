@@ -324,6 +324,48 @@ function extractJson(s: string): string {
   return s;
 }
 
+/**
+ * Попытка ремонта обрезанного JSON: балансируем скобки/кавычки и закрываем.
+ * Это нужно, когда Qwen3 упирается в max_tokens и ответ обрывается посреди строки.
+ */
+function repairJson(s: string): string {
+  let str = s.trim();
+  // Убираем markdown-обложку если есть
+  const fence = str.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) str = fence[1].trim();
+  const start = str.indexOf("{");
+  if (start < 0) return s;
+  str = str.slice(start);
+  // Проходим по строке, отслеживая скобки/скобки массивов и строки
+  let depth = 0;
+  let inStr = false;
+  let escape = false;
+  let lastValidEnd = -1;
+  const stack: string[] = [];
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i];
+    if (escape) { escape = false; continue; }
+    if (c === "\\") { escape = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === "{" || c === "[") { stack.push(c); depth++; }
+    else if (c === "}" || c === "]") { stack.pop(); depth--; if (depth === 0) lastValidEnd = i; }
+  }
+  if (depth === 0 && lastValidEnd >= 0) return str.slice(0, lastValidEnd + 1);
+  // Незакрыто. Докручиваем.
+  let repaired = str;
+  // Закрываем незакрытую строку
+  if (inStr) repaired += '"';
+  // Обрезаем трейлинг запятую перед дозакрыванием
+  repaired = repaired.replace(/,(\s*)$/, "$1");
+  // Дозакрываем скобки в обратном порядке
+  while (stack.length > 0) {
+    const open = stack.pop();
+    repaired += open === "{" ? "}" : "]";
+  }
+  return repaired;
+}
+
 const VSTATUSES: VerificationStatus[] = ["confirmed", "partial", "conflict", "not_checked"];
 const CONSISTENCY = ["match", "partial", "mismatch"] as const;
 const VALUE_KEYS: CulturalValueKey[] = ["responsibility", "partnership", "entrepreneurship"];
@@ -790,10 +832,18 @@ export async function runPipelineAnalysis(
     try {
       parsed = JSON.parse(extractJson(raw));
     } catch (e) {
-      const snippet = extractJson(raw).slice(0, 800);
-      console.error('[pipelineAnalyzer] Failed to parse JSON. Snippet:', snippet);
-      fallbackNote = `Не удалось распарсить JSON от Yandex GPT — использованы значения по умолчанию. Фрагмент ответа: ${snippet.slice(0, 600)}`;
-      parsed = {};
+      // Второй шанс: ремонт обрезанного JSON
+      try {
+        const repaired = repairJson(raw);
+        parsed = JSON.parse(repaired);
+        fallbackNote = "JSON от Yandex GPT был обрезан по лимиту токенов, но успешно восстановлен.";
+        console.warn('[pipelineAnalyzer] JSON repaired after truncation.');
+      } catch (e2) {
+        const snippet = extractJson(raw).slice(0, 800);
+        console.error('[pipelineAnalyzer] Failed to parse JSON. Raw len:', raw.length, 'Snippet:', snippet);
+        fallbackNote = `Не удалось распарсить JSON от Yandex GPT — использованы значения по умолчанию (raw.length=${raw.length}). Фрагмент: ${snippet.slice(0, 600)}`;
+        parsed = {};
+      }
     }
   } catch (e: any) {
     fallbackNote = `Ошибка обращения к Yandex GPT: ${e?.message || e}. Использованы значения по умолчанию.`;
