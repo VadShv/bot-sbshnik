@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.vite/
+
+# Environment variables — never commit secrets
+.env
+.env.*
+!.env.example
+
+# SQLite database files — never commit; exposes data at rest
+data.db
+data.db-shm
+data.db-wal
+data.db-journal
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Skills directory (internal)
+skills/
+tool_calls/

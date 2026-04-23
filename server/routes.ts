@@ -1,0 +1,639 @@
+import type { Express, Request, Response } from "express";
+import type { Server } from "node:http";
+import multer from "multer";
+import { nanoid } from "nanoid";
+import { storage } from "./storage";
+import { runDetectors, aggregateCategoryScore } from "./detectors";
+import { yandexAnalyze } from "./yandex";
+import { runWolfAudit } from "./wolfDetector";
+import type {
+  Finding,
+  FullReport,
+  SubcategoryScore,
+  FindingCategory,
+  RecruiterAction,
+  RecruiterForm,
+  EtkStructured,
+  SingleStepReport,
+  SearchReason,
+  AttitudeToFormer,
+  TimePressure,
+  References,
+} from "@shared/schema";
+import { runPipelineAnalysis } from "./pipelineAnalyzer";
+
+const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
+
+async function extractPdfText(buf: Buffer): Promise<string> {
+  // pdfjs-dist legacy-сборка работает в Node без canvas/native-зависимостей.
+  const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const data = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  const loadingTask = pdfjs.getDocument({
+    data,
+    useSystemFonts: true,
+    disableFontFace: true,
+    isEvalSupported: false,
+    verbosity: 0,
+  });
+  const doc = await loadingTask.promise;
+  try {
+    let full = "";
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const content = await page.getTextContent();
+      const items: any[] = content.items || [];
+      // Склеиваем строки с учётом маркеров EOL от pdfjs
+      const pageText = items
+        .map((it) => {
+          if (!it) return "";
+          if (typeof it.str === "string") {
+            return it.str + (it.hasEOL ? "\n" : "");
+          }
+          return "";
+        })
+        .join("");
+      full += pageText + "\n";
+      try { page.cleanup?.(); } catch {}
+    }
+    return full.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  } finally {
+    try { await doc.destroy?.(); } catch {}
+  }
+}
+
+async function parseUploadedFile(mime: string, buf: Buffer, name: string): Promise<string> {
+  const lowerName = name.toLowerCase();
+  if (mime === "application/pdf" || lowerName.endsWith(".pdf")) {
+    return await extractPdfText(buf);
+  }
+  if (
+    mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    lowerName.endsWith(".docx")
+  ) {
+    const mammoth = await import("mammoth");
+    const result = await mammoth.extractRawText({ buffer: buf });
+    return result.value;
+  }
+  return buf.toString("utf-8");
+}
+
+function mergeFindings(auto: Finding[], llm: Finding[]): Finding[] {
+  const out: Finding[] = [...auto];
+  for (const f of llm) {
+    const dup = out.find(
+      (x) => x.id === f.id || x.title.toLowerCase().trim() === f.title.toLowerCase().trim(),
+    );
+    if (!dup) out.push(f);
+  }
+  return out;
+}
+
+// Тонкая калибровка вердикта — учитываем confidence и плотность доказательств
+function verdictFromScore(score: number, confidence: number): "green" | "yellow" | "red" {
+  // При низкой уверенности (<55) не эскалируем в red раньше, чем score перейдёт 70
+  if (confidence < 55) {
+    if (score >= 70) return "red";
+    if (score >= 35) return "yellow";
+    return "green";
+  }
+  if (score >= 61) return "red";
+  if (score >= 31) return "yellow";
+  return "green";
+}
+
+function extractCandidateName(text: string): string | null {
+  const lines = text.split(/\r?\n/).slice(0, 10);
+  for (const line of lines) {
+    const m = line.match(/^\s*([А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+)?)\s*$/);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+const CATEGORY_LABELS: Record<FindingCategory, string> = {
+  chronology: "Хронология и структура",
+  qualification: "Квалификация и соответствие",
+  achievement: "Достижения и метрики",
+  identity: "Косвенные контакты",
+  behavior: "Поведенческие паттерны",
+  linguistic: "Лингвистика и стиль",
+  reputation: "Репутация и работодатели",
+  other: "Прочее",
+};
+
+function buildSubcategoryBreakdown(allFindings: Finding[]): SubcategoryScore[] {
+  const groups: Record<string, Finding[]> = {};
+  for (const f of allFindings) {
+    const key = f.category || "other";
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(f);
+  }
+  const result: SubcategoryScore[] = [];
+  for (const key of Object.keys(groups) as FindingCategory[]) {
+    const items = groups[key];
+    if (!items.length) continue;
+    // Взвешенный скор: медиана + бонус за плотность
+    const sorted = [...items].sort((a, b) => b.score - a.score);
+    const top = sorted[0];
+    const avg =
+      items.reduce((s, f) => s + f.score * (f.confidence / 100), 0) /
+      items.length;
+    const densityBonus = Math.min(20, items.length * 4);
+    const score = Math.max(0, Math.min(100, Math.round(avg + densityBonus * 0.5)));
+    result.push({
+      key,
+      label: CATEGORY_LABELS[key] || "Прочее",
+      score,
+      findingsCount: items.length,
+      topIssue: top?.title,
+    });
+  }
+  return result.sort((a, b) => b.score - a.score);
+}
+
+// Если LLM не прислала recruiterActionPlan — строим типовой шаблон
+function buildDefaultActionPlan(
+  findings: Finding[],
+  verdict: "green" | "yellow" | "red",
+): RecruiterAction[] {
+  const criticals = findings.filter((f) => f.severity === "critical" || f.severity === "high");
+  const chronoIssues = findings.filter((f) => f.category === "chronology");
+  const qualIssues = findings.filter((f) => f.category === "qualification");
+  const achievIssues = findings.filter((f) => f.category === "achievement");
+  const idIssues = findings.filter((f) => f.category === "identity");
+  const behavIssues = findings.filter((f) => f.category === "behavior");
+
+  const plan: RecruiterAction[] = [];
+
+  plan.push({
+    step: 1,
+    title: "Скрининг-звонок 15 мин: верификация хронологии и мотивации",
+    description:
+      "Попросить последовательно рассказать о каждом месте работы за последние 5 лет: даты, грейд, команда, реальные задачи, причины ухода. Отметить паузы, совмещения, несостыковки с резюме.",
+    priority: verdict === "green" ? "should" : "must",
+    estimatedTime: "15 минут",
+    targets: chronoIssues.map((f) => f.id).slice(0, 5),
+  });
+
+  if (qualIssues.length || criticals.some((f) => f.category === "qualification")) {
+    plan.push({
+      step: plan.length + 1,
+      title: "Техническое интервью: реальная глубина стека",
+      description:
+        "Задать 3–5 детальных вопросов по заявленным технологиям и архитектурным решениям. Попросить разобрать одну из заявленных задач «как именно делали, какие trade-offs, что не сработало». Поверхностные ответы — сигнал инфляции.",
+      priority: "must",
+      estimatedTime: "45–60 минут",
+      targets: qualIssues.map((f) => f.id).slice(0, 5),
+    });
+  }
+
+  if (achievIssues.length) {
+    plan.push({
+      step: plan.length + 1,
+      title: "Проверка достижений: цифры и роль",
+      description:
+        "По каждому громкому достижению спросить: базовый показатель до, итоговый после, период, размер команды, личный вклад (I/we). Отсутствие цифр и размытое «мы» — red flag.",
+      priority: "should",
+      estimatedTime: "20 минут",
+      targets: achievIssues.map((f) => f.id).slice(0, 5),
+    });
+  }
+
+  plan.push({
+    step: plan.length + 1,
+    title: "Reference check: 2 независимых источника",
+    description:
+      "Запросить контакты бывшего руководителя и коллеги/подчинённого с двух последних мест работы. Проверить: тайтл, даты, реальные задачи, причины ухода, качество работы. ВАЖНО: не ограничиваться контактами, которые дал сам кандидат — искать знакомых через OSINT.",
+    priority: verdict === "red" ? "must" : "should",
+    estimatedTime: "1–2 часа",
+    targets: [...chronoIssues, ...qualIssues].map((f) => f.id).slice(0, 5),
+  });
+
+  if (idIssues.length || verdict !== "green") {
+    plan.push({
+      step: plan.length + 1,
+      title: "OSINT-проверка косвенных контактов",
+      description:
+        "Прогнать домен email и префикс телефона (регион), сверить с заявленным городом. Найти профили в LinkedIn/HH/GitHub — сопоставить тайтлы, даты, стек. Искать репутационные упоминания (форумы, открытые источники).",
+      priority: idIssues.length ? "must" : "should",
+      estimatedTime: "30–45 минут",
+      targets: idIssues.map((f) => f.id).slice(0, 5),
+    });
+  }
+
+  if (behavIssues.length) {
+    plan.push({
+      step: plan.length + 1,
+      title: "Поведенческое интервью: причины частых смен",
+      description:
+        "Разобрать каждый короткий контракт (<12 мес): почему ушёл, с чем столкнулся, что бы сделал иначе. Искать паттерн: всегда ли виноваты другие; упоминание чатов/сообществ смены работы.",
+      priority: "should",
+      estimatedTime: "20 минут",
+      targets: behavIssues.map((f) => f.id).slice(0, 5),
+    });
+  }
+
+  if (verdict === "red") {
+    plan.push({
+      step: plan.length + 1,
+      title: "Документальная верификация: трудовая книжка / СЗВ-ТД",
+      description:
+        "При положительном офере потребовать документы, подтверждающие все заявленные места работы и даты. Сверить с тем, что было озвучено в скрининге. Расхождения — основание для отказа.",
+      priority: "must",
+      estimatedTime: "30 минут",
+      targets: chronoIssues.map((f) => f.id).slice(0, 5),
+    });
+  }
+
+  return plan;
+}
+
+export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
+  app.get("/api/health", async (_req, res) => {
+    res.json({
+      ok: true,
+      yandexConfigured: Boolean(process.env.YANDEX_API_KEY),
+      time: Date.now(),
+    });
+  });
+
+  // Извлечение текста из PDF/DOCX
+  app.post(
+    "/api/extract",
+    upload.single("file"),
+    async (req: Request, res: Response) => {
+      try {
+        const file = (req as any).file as Express.Multer.File | undefined;
+        if (!file) return res.status(400).json({ message: "Файл не прислан" });
+        const text = await parseUploadedFile(file.mimetype, file.buffer, file.originalname);
+        if (!text || text.trim().length < 30) {
+          return res.status(400).json({ message: "Не удалось извлечь текст из файла." });
+        }
+        res.json({ text, fileName: file.originalname });
+      } catch (e: any) {
+        res.status(500).json({ message: `Ошибка парсинга: ${e.message}` });
+      }
+    },
+  );
+
+  // Список проверок
+  app.get("/api/checks", async (_req, res) => {
+    try {
+      const items = await storage.listChecks(100);
+      const ids = items.map((c) => c.id);
+      const pipelines = await storage.listPipelinesByParentIds(ids);
+      const pipelineCountByParent = new Map<string, number>();
+      for (const p of pipelines) {
+        if (!p.parentId) continue;
+        pipelineCountByParent.set(p.parentId, (pipelineCountByParent.get(p.parentId) || 0) + 1);
+      }
+      res.json(
+        items.map((c) => ({
+          id: c.id,
+          createdAt: c.createdAt,
+          candidateName: c.candidateName,
+          riskScore: c.riskScore,
+          inflationScore: c.inflationScore,
+          wolvesScore: c.wolvesScore,
+          totalScore: c.totalScore,
+          verdict: c.verdict,
+          hasPipeline: (pipelineCountByParent.get(c.id) || 0) > 0,
+          pipelineCount: pipelineCountByParent.get(c.id) || 0,
+        })),
+      );
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/checks/:id", async (req, res) => {
+    try {
+      const c = await storage.getCheck(req.params.id);
+      if (!c) return res.status(404).json({ message: "Не найдено" });
+      const pipelines = await storage.listPipelinesByParent(c.id);
+      res.json({
+        id: c.id,
+        createdAt: c.createdAt,
+        candidateName: c.candidateName,
+        resumeText: c.resumeText,
+        report: JSON.parse(c.reportJson) as FullReport,
+        pipelines: pipelines.map((p) => ({
+          id: p.id,
+          createdAt: p.createdAt,
+          version: p.version,
+          compositeScore: p.compositeScore,
+          resolutionCode: p.resolutionCode,
+        })),
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/checks/:id", async (req, res) => {
+    try {
+      await storage.deleteCheck(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Основной анализ
+  app.post("/api/analyze", async (req, res) => {
+    try {
+      const { text } = req.body || {};
+      if (typeof text !== "string" || text.trim().length < 100) {
+        return res.status(400).json({
+          message: "Текст резюме слишком короткий (мин. 100 символов).",
+        });
+      }
+
+      const det = runDetectors(text);
+
+      // Параллельно: базовый анализ + усиленный Wolf Detector v1.0
+      const [llm, wolfAuditResult] = await Promise.all([
+        yandexAnalyze(text, [...det.risks, ...det.inflation, ...det.wolves]),
+        runWolfAudit(text, {}).catch((err) => {
+          console.error("Wolf Detector error:", err);
+          return null;
+        }),
+      ]);
+
+      const risksAll = mergeFindings(det.risks, llm.risks.findings);
+      const inflationAll = mergeFindings(det.inflation, llm.inflation.findings);
+      const wolvesAll = mergeFindings(det.wolves, llm.wolves.findings);
+
+      const riskScore = Math.max(aggregateCategoryScore(risksAll, 10), llm.risks.score);
+      const inflationScore = Math.max(
+        aggregateCategoryScore(inflationAll, 10),
+        llm.inflation.score,
+      );
+      const wolvesScore = Math.max(aggregateCategoryScore(wolvesAll, 5), llm.wolves.score);
+
+      const totalScore = Math.round(
+        riskScore * 0.4 + inflationScore * 0.4 + wolvesScore * 0.2,
+      );
+
+      // Средняя уверенность модели (для калибровки вердикта)
+      const avgConfidence = Math.round(
+        (llm.confidence +
+          (llm.risks.confidence || 60) +
+          (llm.inflation.confidence || 60) +
+          (llm.wolves.confidence || 60)) /
+          4,
+      );
+
+      const verdict = verdictFromScore(totalScore, avgConfidence);
+
+      const candidateName = llm.candidateName || extractCandidateName(text);
+
+      // Сводная разбивка по 5 субкатегориям
+      const allFindings = [...risksAll, ...inflationAll, ...wolvesAll];
+      const subcategoryBreakdown = buildSubcategoryBreakdown(allFindings);
+
+      // Action plan: берём от LLM, если пустой — генерируем шаблонный
+      const recruiterActionPlan =
+        llm.recruiterActionPlan && llm.recruiterActionPlan.length > 0
+          ? llm.recruiterActionPlan
+          : buildDefaultActionPlan(allFindings, verdict);
+
+      const id = nanoid(10);
+      const report: FullReport = {
+        candidateName,
+        riskScore,
+        inflationScore,
+        wolvesScore,
+        totalScore,
+        verdict,
+        confidence: avgConfidence,
+        executiveSummary: llm.executiveSummary,
+        risks: {
+          score: riskScore,
+          summary: llm.risks.summary,
+          confidence: llm.risks.confidence,
+          findings: risksAll.sort((a, b) => b.score - a.score),
+        },
+        inflation: {
+          score: inflationScore,
+          summary: llm.inflation.summary,
+          confidence: llm.inflation.confidence,
+          findings: inflationAll.sort((a, b) => b.score - a.score),
+        },
+        wolves: {
+          score: wolvesScore,
+          summary: llm.wolves.summary,
+          confidence: llm.wolves.confidence,
+          findings: wolvesAll.sort((a, b) => b.score - a.score),
+        },
+        subcategoryBreakdown,
+        redFlags: llm.redFlags,
+        positiveSignals: llm.positiveSignals,
+        interviewQuestions: llm.interviewQuestions,
+        sbRecommendations: llm.sbRecommendations,
+        recruiterActionPlan,
+        wolfAudit: wolfAuditResult || undefined,
+        createdAt: Date.now(),
+      };
+
+      await storage.saveCheck({
+        id,
+        createdAt: report.createdAt,
+        candidateName,
+        resumeText: text,
+        riskScore,
+        inflationScore,
+        wolvesScore,
+        totalScore,
+        verdict,
+        reportJson: JSON.stringify(report),
+      });
+
+      res.json({ id, report });
+    } catch (e: any) {
+      console.error("Analyze error:", e);
+      res.status(500).json({ message: e.message || "Внутренняя ошибка анализа" });
+    }
+  });
+
+  // ==========================================================
+  // SINGLE-STEP PIPELINE v3.0
+  // ==========================================================
+
+  const SEARCH_REASONS: SearchReason[] = [
+    "growth", "low_salary", "layoff", "conflict",
+    "burnout", "no_growth", "other",
+  ];
+  const ATTITUDES: AttitudeToFormer[] = ["positive", "neutral", "critical", "hostile"];
+  const PRESSURES: TimePressure[] = ["has_offer", "personal_deadline", "no_pressure", "not_specified"];
+  const REFS: References[] = ["has_ready", "has_not_ready", "none", "not_discussed"];
+
+  function normalizeForm(raw: any): RecruiterForm | null {
+    if (!raw || typeof raw !== "object") return null;
+    const searchReason = SEARCH_REASONS.includes(raw.searchReason) ? raw.searchReason : "other";
+    const attitudeToFormer = ATTITUDES.includes(raw.attitudeToFormer) ? raw.attitudeToFormer : "neutral";
+    const timePressure = PRESSURES.includes(raw.timePressure) ? raw.timePressure : "not_specified";
+    const references = REFS.includes(raw.references) ? raw.references : "not_discussed";
+    const note = String(raw.note ?? "").slice(0, 300);
+    return { searchReason, attitudeToFormer, timePressure, references, note };
+  }
+
+  function normalizeEtk(raw: any): EtkStructured {
+    if (!raw || typeof raw !== "object") {
+      return { records: [], source: "none" };
+    }
+    const records = Array.isArray(raw.records)
+      ? raw.records.slice(0, 30).map((r: any) => ({
+          company: String(r?.company || "").slice(0, 200),
+          position: r?.position ? String(r.position).slice(0, 200) : undefined,
+          startDate: r?.startDate ? String(r.startDate).slice(0, 20) : undefined,
+          endDate: r?.endDate === null ? null : r?.endDate ? String(r.endDate).slice(0, 20) : undefined,
+          reason: r?.reason ? String(r.reason).slice(0, 400) : undefined,
+          inn: r?.inn ? String(r.inn).slice(0, 20) : undefined,
+        })).filter((r: any) => r.company.length > 0)
+      : [];
+    const src: "xml" | "text" | "none" =
+      raw.source === "xml" || raw.source === "text"
+        ? raw.source
+        : records.length > 0 ? "text" : "none";
+    return {
+      records,
+      source: src,
+      note: raw.note ? String(raw.note).slice(0, 400) : undefined,
+    };
+  }
+
+  async function doPipelineAnalyze(params: {
+    resumeText: string;
+    etk: EtkStructured;
+    interviewText: string;
+    referencesText: string;
+    form: RecruiterForm;
+    parentId?: string;
+    version: number;
+  }) {
+    const report = await runPipelineAnalysis({
+      resumeText: params.resumeText,
+      etk: params.etk,
+      interviewText: params.interviewText,
+      referencesText: params.referencesText,
+      form: params.form,
+    });
+    const id = nanoid(10);
+    await storage.savePipelineCheck({
+      id,
+      createdAt: report.createdAt,
+      parentId: params.parentId ?? null,
+      version: params.version,
+      candidateName: report.candidateName,
+      resumeText: params.resumeText,
+      etkText: params.etk.records.length ? JSON.stringify(params.etk) : null,
+      interviewText: params.interviewText || null,
+      referencesText: params.referencesText || null,
+      recruiterForm: JSON.stringify(params.form),
+      compositeScore: report.compositeScore,
+      resolutionCode: report.resolution.code,
+      reportJson: JSON.stringify(report),
+    });
+    return { id, report };
+  }
+
+  app.post("/api/pipeline/analyze", async (req, res) => {
+    try {
+      const {
+        resumeText,
+        etk,
+        interviewText,
+        referencesText,
+        form,
+        parentCheckId,
+      } = req.body || {};
+
+      if (typeof resumeText !== "string" || resumeText.trim().length < 100) {
+        return res.status(400).json({
+          message: "Резюме слишком короткое (мин. 100 символов).",
+        });
+      }
+      const nForm = normalizeForm(form);
+      if (!nForm) {
+        return res.status(400).json({ message: "Не заполнена форма рекрутера." });
+      }
+      const nEtk = normalizeEtk(etk);
+      // parentCheckId — связь с исходной обычной проверкой (checks.id)
+      let parentId: string | undefined;
+      if (typeof parentCheckId === "string" && parentCheckId.trim()) {
+        const parent = await storage.getCheck(parentCheckId.trim());
+        if (parent) parentId = parent.id;
+      }
+      const result = await doPipelineAnalyze({
+        resumeText,
+        etk: nEtk,
+        interviewText: String(interviewText || ""),
+        referencesText: String(referencesText || ""),
+        form: nForm,
+        parentId,
+        version: 1,
+      });
+      res.json(result);
+    } catch (e: any) {
+      console.error("Pipeline analyze error:", e);
+      res.status(500).json({ message: e.message || "Внутренняя ошибка пайплайна" });
+    }
+  });
+
+  app.get("/api/pipeline/:id", async (req, res) => {
+    try {
+      const c = await storage.getPipelineCheck(req.params.id);
+      if (!c) return res.status(404).json({ message: "Не найдено" });
+      res.json({
+        id: c.id,
+        createdAt: c.createdAt,
+        version: c.version,
+        parentId: c.parentId,
+        candidateName: c.candidateName,
+        report: JSON.parse(c.reportJson) as SingleStepReport,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/pipeline/:id/recompute", async (req, res) => {
+    try {
+      const prev = await storage.getPipelineCheck(req.params.id);
+      if (!prev) return res.status(404).json({ message: "Не найдено" });
+
+      // Опциональный патч: клиент может передать обновлённую форму/тексты
+      const patch = req.body || {};
+      const form = normalizeForm(patch.form) || (JSON.parse(prev.recruiterForm) as RecruiterForm);
+      const etk = normalizeEtk(
+        patch.etk ?? (prev.etkText ? JSON.parse(prev.etkText) : { records: [], source: "none" }),
+      );
+      const resumeText = typeof patch.resumeText === "string" && patch.resumeText.trim().length >= 100
+        ? patch.resumeText
+        : prev.resumeText;
+      const interviewText = typeof patch.interviewText === "string"
+        ? patch.interviewText
+        : (prev.interviewText || "");
+      const referencesText = typeof patch.referencesText === "string"
+        ? patch.referencesText
+        : (prev.referencesText || "");
+
+      const result = await doPipelineAnalyze({
+        resumeText,
+        etk,
+        interviewText,
+        referencesText,
+        form,
+        parentId: prev.parentId || prev.id,
+        version: prev.version + 1,
+      });
+      res.json(result);
+    } catch (e: any) {
+      console.error("Pipeline recompute error:", e);
+      res.status(500).json({ message: e.message || "Ошибка пересчёта" });
+    }
+  });
+
+  return httpServer;
+}

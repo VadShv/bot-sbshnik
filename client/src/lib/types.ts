@@ -1,0 +1,74 @@
+// Ре-экспорт типов отчёта из shared, чтобы фронт и бэкенд были в синхроне.
+export type {
+  Severity,
+  EvidenceType,
+  Evidence,
+  VerificationStep,
+  FindingCategory,
+  Finding,
+  CategoryReport,
+  SubcategoryScore,
+  RedFlag,
+  RecruiterAction,
+  FullReport,
+  // Wolf Detector v1.0
+  TimelineEntry,
+  TimelineAnomaly,
+  ProgressionAnomaly,
+  EmployerCheck,
+  AchievementItem,
+  SkillIssue,
+  WolfSignalType,
+  WolfSignalCategory,
+  WolfArchetype,
+  WolfSignal,
+  OsintSourceId,
+  OsintCheck,
+  InterviewQuestionTriplet,
+  PolygraphQuestionKind,
+  PolygraphTrigger,
+  WolfSchoolCode,
+  OveremploymentRisk,
+  WolfSchoolDetection,
+  WolfAudit,
+  // Single-Step Pipeline v3.0
+  RecruiterForm,
+  SearchReason,
+  AttitudeToFormer,
+  TimePressure,
+  References,
+  EtkRecord,
+  EtkStructured,
+  VerificationStatus,
+  VerificationItem,
+  VerificationResult,
+  MotivationAnalysis,
+  CulturalValueKey,
+  CulturalValueScore,
+  CulturalFitV3,
+  LoyaltyScore,
+  ResolutionCode,
+  FinalResolution,
+  SingleStepReport,
+} from "@shared/schema";
+
+export type CheckListItem = {
+  id: string;
+  createdAt: number;
+  candidateName: string | null;
+  riskScore: number;
+  inflationScore: number;
+  wolvesScore: number;
+  totalScore: number;
+  verdict: "green" | "yellow" | "red";
+  hasPipeline?: boolean;
+  pipelineCount?: number;
+};
+
+export type PipelineSummary = {
+  id: string;
+  createdAt: number;
+  version: number;
+  compositeScore: number;
+  resolutionCode: ResolutionCode;
+};

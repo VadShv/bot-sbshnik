@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: bot-sbshnik
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=optional && npm run build
+    startCommand: node dist/index.cjs
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: YANDEX_API_KEY
+        sync: false
+      - key: YANDEX_FOLDER_ID
+        sync: false
+      - key: YANDEX_MODEL
+        value: yandexgpt
+      - key: BASIC_AUTH_USER
+        sync: false
+      - key: BASIC_AUTH_PASS
+        sync: false
+    disk:
+      name: sqlite-data
+      mountPath: /opt/render/project/src
+      sizeGB: 1
