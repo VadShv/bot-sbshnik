@@ -1,4 +1,6 @@
 // Ре-экспорт типов отчёта из shared, чтобы фронт и бэкенд были в синхроне.
+import type { ResolutionCode } from "@shared/schema";
+
 export type {
   Severity,
   EvidenceType,
@@ -50,6 +52,11 @@ export type {
   ResolutionCode,
   FinalResolution,
   SingleStepReport,
+  ExecutiveSummary,
+  KeyFinding,
+  ConsistencyCheck,
+  TimelineMetrics,
+  EmploymentSpan,
 } from "@shared/schema";
 
 export type CheckListItem = {

@@ -1,7 +1,7 @@
 # Nixpacks конфиг для Railway
-# Фиксируем Node.js 20 для стабильной сборки better-sqlite3 / pdfjs-dist
+# Фиксируем Node.js 22 (vite 7 требует >=20.19, надёжнее взять 22)
 [phases.setup]
-nixPkgs = ["nodejs_20", "python3", "gcc", "gnumake"]
+nixPkgs = ["nodejs_22", "python3", "gcc", "gnumake"]
 
 [phases.install]
 cmds = ["npm ci"]

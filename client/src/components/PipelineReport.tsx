@@ -4,6 +4,7 @@ import type {
   VerificationStatus,
   ResolutionCode,
   CulturalValueKey,
+  KeyFinding,
 } from "@/lib/types";
 import {
   CheckCircle2,
@@ -17,7 +18,40 @@ import {
   Rocket,
   Users,
   FileText,
+  Sparkles,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  CalendarRange,
 } from "lucide-react";
+
+// Формат месяцев в «2 г 3 мес»
+function formatMonths(m: number): string {
+  if (m < 12) return `${m} мес`;
+  const years = Math.floor(m / 12);
+  const months = m % 12;
+  if (months === 0) return `${years} г`;
+  return `${years} г ${months} мес`;
+}
+
+function findingIcon(type: KeyFinding["type"]) {
+  if (type === "strength") return TrendingUp;
+  if (type === "risk") return TrendingDown;
+  return Minus;
+}
+function findingTone(type: KeyFinding["type"]) {
+  if (type === "strength") return "border-emerald-500/30 bg-emerald-500/5 text-emerald-300";
+  if (type === "risk") return "border-red-500/30 bg-red-500/5 text-red-300";
+  return "border-card-border bg-background/40 text-muted-foreground";
+}
+function moduleLabel(mod: KeyFinding["module"]): string {
+  switch (mod) {
+    case "verification": return "Верификация";
+    case "motivation": return "Мотивация";
+    case "culturalFit": return "Cultural Fit";
+    case "loyalty": return "Лояльность";
+  }
+}
 
 // ==========================================================
 // Вспомогательное
@@ -91,6 +125,72 @@ export function PipelineReport({ report }: { report: SingleStepReport }) {
 
   return (
     <div className="space-y-5">
+      {/* Executive Summary — сводка для руководителя */}
+      {report.executiveSummary && (
+        <Card className="border-card-border bg-gradient-to-br from-primary/5 via-background to-background p-5" data-testid="card-executive-summary">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Сводка для руководителя
+            </div>
+            {report.executiveSummary.consistency.status !== "ok" && (
+              <span
+                className={`ml-auto rounded-md border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest ${
+                  report.executiveSummary.consistency.status === "conflict"
+                    ? "border-red-500/40 bg-red-500/10 text-red-300"
+                    : "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                }`}
+                data-testid="badge-consistency"
+              >
+                {report.executiveSummary.consistency.status === "conflict"
+                  ? "⚠ Противоречия в данных"
+                  : "⚠ Есть несостыковки"}
+              </span>
+            )}
+          </div>
+          <div className="mt-2 text-lg font-semibold tracking-tight" data-testid="text-executive-headline">
+            {report.executiveSummary.headline}
+          </div>
+          <p className="mt-1.5 text-sm text-muted-foreground" data-testid="text-executive-paragraph">
+            {report.executiveSummary.paragraph}
+          </p>
+          {report.executiveSummary.keyFindings.length > 0 && (
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {report.executiveSummary.keyFindings.map((f, i) => {
+                const FIcon = findingIcon(f.type);
+                return (
+                  <div
+                    key={i}
+                    className={`flex items-start gap-2 rounded-md border p-2.5 ${findingTone(f.type)}`}
+                    data-testid={`finding-${i}`}
+                  >
+                    <FIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <div className="flex-1 text-xs">
+                      <div className="font-mono text-[9px] uppercase tracking-widest opacity-70">
+                        {moduleLabel(f.module)}
+                      </div>
+                      <div className="mt-0.5">{f.text}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {report.executiveSummary.consistency.notes.length > 0 && (
+            <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5">
+              <div className="font-mono text-[10px] uppercase tracking-widest text-amber-300">
+                Замечания по согласованности
+              </div>
+              <ul className="mt-1 space-y-0.5 text-xs text-amber-200/90">
+                {report.executiveSummary.consistency.notes.map((n, i) => (
+                  <li key={i}>• {n}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </Card>
+      )}
+
       {/* Финальная резолюция */}
       <Card className={`border-2 ${tone.border} ${tone.glow} bg-gradient-to-br from-background via-background to-background/50 p-6`}>
         <div className="flex items-start gap-4">
@@ -375,6 +475,55 @@ export function PipelineReport({ report }: { report: SingleStepReport }) {
           )}
         </Card>
       </div>
+
+      {/* Хронология опыта (локальные метрики) */}
+      {report.timeline && report.timeline.spans.length > 0 && (
+        <Card className="border-card-border bg-card p-5" data-testid="card-timeline">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CalendarRange className="h-4 w-4 text-primary" />
+              <div className="font-semibold">Хронология опыта</div>
+            </div>
+            <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Источник: {report.timeline.source.toUpperCase()}
+            </span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="rounded-md border border-card-border bg-background/40 p-2.5 text-center">
+              <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Общий стаж</div>
+              <div className="mt-0.5 text-base font-bold">{formatMonths(report.timeline.totalMonths)}</div>
+            </div>
+            <div className="rounded-md border border-card-border bg-background/40 p-2.5 text-center">
+              <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Позиций</div>
+              <div className="mt-0.5 text-base font-bold">{report.timeline.jobsCount}</div>
+            </div>
+            <div className="rounded-md border border-card-border bg-background/40 p-2.5 text-center">
+              <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Средняя</div>
+              <div className="mt-0.5 text-base font-bold">{formatMonths(report.timeline.avgMonths)}</div>
+            </div>
+            <div className="rounded-md border border-card-border bg-background/40 p-2.5 text-center">
+              <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Коротких &lt;12м</div>
+              <div className={`mt-0.5 text-base font-bold ${report.timeline.shortStintsCount > 0 ? "text-amber-300" : ""}`}>{report.timeline.shortStintsCount}</div>
+            </div>
+          </div>
+          <div className="mt-3 space-y-1.5">
+            {report.timeline.spans.slice(0, 10).map((s, i) => (
+              <div key={i} className="flex items-baseline justify-between gap-2 rounded border border-card-border bg-background/30 px-3 py-1.5 text-xs">
+                <div className="flex-1 truncate">
+                  <span className="font-medium">{s.company}</span>
+                  {s.position && <span className="text-muted-foreground"> · {s.position}</span>}
+                </div>
+                <div className="font-mono text-[10px] text-muted-foreground">
+                  {s.startISO ?? "?"} — {s.endISO ?? "наст.время"}
+                </div>
+                <div className={`shrink-0 font-mono text-[10px] tabular-nums ${s.months !== null && s.months < 12 ? "text-amber-300" : "text-muted-foreground"}`}>
+                  {s.months !== null ? formatMonths(s.months) : "—"}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Формула */}
       <Card className="border-card-border bg-card/50 p-4">

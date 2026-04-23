@@ -489,9 +489,51 @@ export type FinalResolution = {
   blockingFactor?: string;          // если есть 🔴 или CS<50
 };
 
+// --- Сводка для руководителя (executive summary) ---
+export type KeyFinding = {
+  type: "strength" | "risk" | "neutral";
+  module: "verification" | "motivation" | "culturalFit" | "loyalty";
+  text: string;
+};
+
+export type ConsistencyCheck = {
+  // явные противоречия между модулями (для прозрачности)
+  // status: ok = противоречий нет, warning = есть несостыковки, conflict = есть прямой конфликт
+  status: "ok" | "warning" | "conflict";
+  notes: string[];                  // 0-5 фактов о согласованности/несогласованности
+};
+
+export type ExecutiveSummary = {
+  // 2-3 предложения для CEO/руководителя — однозначный вывод, без противоречий с детальными модулями
+  headline: string;                 // 1 предложение, итог одной строкой
+  paragraph: string;                // 2-3 предложения, итог расширенно
+  keyFindings: KeyFinding[];        // 3-6 ключевых наблюдений
+  consistency: ConsistencyCheck;
+};
+
+// --- Метрики, рассчитанные локально (не от LLM, для отображения в отчёте) ---
+export type EmploymentSpan = {
+  company: string;
+  position?: string;
+  startISO: string | null;          // YYYY-MM-DD
+  endISO: string | null;            // null = по настоящее время
+  months: number | null;            // длительность в месяцах
+  source: "resume" | "etk";
+};
+
+export type TimelineMetrics = {
+  totalMonths: number;              // общий стаж в месяцах
+  jobsCount: number;                // число позиций
+  avgMonths: number;                // средняя длительность
+  shortStintsCount: number;         // <12 мес
+  gapsMonths: number;               // суммарные пробелы между работами
+  spans: EmploymentSpan[];
+  source: "resume" | "etk" | "merged";
+};
+
 // --- Итоговый отчёт пайплайна ---
 export type SingleStepReport = {
-  version: "3.0";
+  version: "3.1";
   candidateName: string | null;
   createdAt: number;
   recruiterForm: RecruiterForm;
@@ -502,5 +544,7 @@ export type SingleStepReport = {
   loyalty: LoyaltyScore;
   compositeScore: number;
   resolution: FinalResolution;
-  rawAnalysisNote?: string;         // служебное: fallback-сообщение
+  executiveSummary?: ExecutiveSummary;   // новый блок — сводка для руководителя
+  timeline?: TimelineMetrics;            // локально рассчитанные метрики опыта
+  rawAnalysisNote?: string;              // служебное: fallback-сообщение
 };
