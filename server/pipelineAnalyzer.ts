@@ -41,18 +41,24 @@ const SYSTEM_PROMPT = `Ты — единый AI-аналитик Службы Б
 ГЛАВНЫЕ ПРИНЦИПЫ:
 1) ОБОСНОВАННОСТЬ: каждая оценка опирается на дословные цитаты или точно сформулированные наблюдения. Не выдумывай факты, которых нет во входных данных.
 2) PII-FREE: не используй ФИО (кроме поля candidateName), точную дату рождения, паспорт, СНИЛС, ИНН, полный телефон. Допустимы косвенные маркеры (домен email, регион).
-3) РАБОТА С ДАТАМИ — СТРОГО:
-   • Даты в ЭТК предоставлены в формате ISO (YYYY-MM-DD). Длительность каждой работы уже посчитана и передана тебе в поле «продолжительность» — НЕ пересчитывай её сам и НЕ сравнивай с собственной оценкой.
+3) РАБОТА С ДАТАМИ — АБСОЛЮТНЫЙ ЗАПРЕТ НА ФАНТОМНЫЕ НЕСТЫКОВКИ:
+   • Даты в ЭТК предоставлены в формате ISO (YYYY-MM-DD). Длительность каждой работы уже посчитана сервером и передана тебе в поле «продолжительность» — НЕ пересчитывай её сам, НЕ сравнивай со своей оценкой и НЕ спорь с ней.
+   • Текущая дата ТОЛЬКО та, что указана в блоке [ТЕКУЩАЯ ДАТА]. Дата обновления резюме (если встречается в тексте) — это НЕ «сегодня», это просто дата документа. Для расчёта «по настоящее время» используй ТОЛЬКО [ТЕКУЩАЯ ДАТА].
    • При сопоставлении периодов резюме × ЭТК допустимо расхождение ДО 90 дней (3 месяца) включительно — это «partial», а не «conflict».
-   • «Конфликт» — только если: (а) компании из резюме НЕТ в ЭТК, или (б) период отличается БОЛЕЕ чем на 3 месяца, или (в) явное противоречие в должности/датах.
+   • «Конфликт» — только если: (а) компании из резюме НЕТ в ЭТК, или (б) период отличается БОЛЕЕ чем на 3 месяца, или (в) явное противоречие в должности.
    • НЕ трактуй «март 2020» и «2020-03-15» как разные даты — это одно и то же.
-   • ⚠️ СТРОГО ЗАПРЕЩЕНО (эти вещи НЕ являются нестыковкой, конфликтом, фальсификацией и риск-сигналом):
-     – Критиковать факт «работа по настоящее время», endDate=null или «открытая запись» — это обычное состояние действующего сотрудника.
-     – Сравнивать даты опыта с датой обновления резюме и называть это «работой в будущем». Текущая дата может быть ПОЗЖЕ даты обновления резюме; период с endDate=null длится ДО СЕЙЧАС, а не до даты резюме.
-     – Придираться к округлениям лет и месяцев — «23 месяца» и «2 года», «11 месяцев» и «1 год» и т.п. Это нормальное округление.
-     – Считать нестыковкой расхождение статуса «по настоящее время» между резюме и ЭТК, если при этом дата окончания в ЭТК — это также открытая/null запись. Любой из вариантов записи — это активный договор.
-     – Добавлять в анализ любые выводы о «работе в будущем», «фальсификации хронологии из-за округления месяцев», «расхождении даты резюме и даты работы».
-   • Расчёт относительно текущей даты уже выполнен сервером. Текущая дата будет передана во входных данных (блок [ТЕКУЩАЯ ДАТА]). Используй её, не выдумывай свою.
+   • 🚫 ПОЛНЫЙ И БЕЗУСЛОВНЫЙ ЗАПРЕТ на следующие формулировки, выводы и риск-сигналы (они НИКОГДА не являются нестыковкой, конфликтом, фальсификацией, искажением фактов или риском):
+     – «Работа в будущем», «работает в будущем», «будущее время», «работа после даты резюме».
+     – «Фантомный опыт», «фантомные даты», «фантомный период».
+     – «Хронологическое противоречие» или «искажение фактов» на основании того, что декларированный в резюме срок («2 года», «3 года») НЕ равен точному количеству месяцев до даты обновления резюме. Срок «X лет» в резюме считается ОТ даты начала ДО [ТЕКУЩАЯ ДАТА], а НЕ до даты обновления резюме.
+     – «Период составляет 2 года, хотя прошло менее 24 месяцев» — это НЕ противоречие. «2 года» — это разговорное округление, которое кандидат считает от сегодняшнего дня или в уме. НЕ сравнивай цифру в скобках рядом с периодом с собственным расчётом количества месяцев.
+     – Округления «23 месяца ≈ 2 года», «11 месяцев ≈ 1 год», «3 года 1 месяц ≈ 3 года» — это нормально. НЕ упоминай их как проблему.
+     – Расхождение статуса «по настоящее время» / endDate=null между резюме и ЭТК, если в обоих записях период открыт.
+     – Сам факт endDate=null, «открытая запись», «работа продолжается».
+   • ПРАВИЛО О СРОКЕ В РЕЗЮМЕ: если кандидат написал «Период: апрель 2024 — настоящее время (2 года)» — это корректно всегда, когда с даты начала прошло от ~18 до ~30 месяцев. НЕ пиши про «искажение фактов», «расхождение срока», «менее 24 месяцев».
+   • Если у тебя возникает мысль сравнить дату резюме с датой работы — ОСТАНОВИСЬ. Такой проверки в этом продукте НЕТ.
+   • Расчёт относительно текущей даты уже выполнен сервером. Используй [ТЕКУЩАЯ ДАТА], не выдумывай свою.
+   • ⚠️ Любая строка в поле note/summary/redFlags/keyFindings, содержащая слова «фантом», «в будущем», «искажение фактов», «менее 24 месяцев», «хронологическое противоречие», «дата обновления резюме» в контексте риска — будет УДАЛЕНА программно, а твой ответ помечен как некорректный. Не пиши их.
 4) БЛОКИРУЮЩЕЕ РАСХОЖДЕНИЕ: status="conflict" (🔴) ставится ТОЛЬКО при реальном противоречии данных, не при отсутствии записи в ЭТК.
 5) КАЛИБРОВКА ЦЕННОСТЕЙ (1–5): 1 — явные антиподы; 2 — слабо выражено; 3 — нейтрально/нет данных; 4 — хорошо видно; 5 — ярко и последовательно. Если данных нет — ставь 3 и явно укажи это в note.
 6) ТРИ ЦЕННОСТИ V3.0 (только эти, именно с этими key): responsibility, partnership, entrepreneurship.
@@ -376,6 +382,50 @@ function repairJson(s: string): string {
   return repaired;
 }
 
+// =====================================================================
+// Фильтр фантомных формулировок (даты/округления/резюме-в-будущем)
+// Это детерминированная страховка на случай, если LLM всё же выдаст запрещённые фразы.
+// =====================================================================
+const PHANTOM_PATTERNS: RegExp[] = [
+  /фантомные?\s*(?:даты|период|опыт)/i,
+  /работа(?:ет)?\s+в\s+будущем/i,
+  /будущее?\s+время/i,
+  /работа\s+после\s+даты\s+резюме/i,
+  /менее\s+24\s+месяц/i,
+  /меньше\s+24\s+месяц/i,
+  /хронологическое?\s+противоречи/i,
+  /искажение?\s+фактов/i,
+  /фальсификация\s+хронолог/i,
+  /округление?\s+вверх/i,
+  /близком\s+к\s+порогу/i,
+  /дата\s+обновления\s+резюме/i,
+  /обновлено?\s+\d+\s+\w+\s+20\d{2}/i,
+  /после\s+обновления\s+резюме/i,
+  /прошло\s+менее\s+\d+\s+месяц/i,
+  /23\s+месяц\w*\s+представлен/i,
+];
+
+/** Возвращает true, если строка содержит фантомные формулировки. */
+function isPhantom(text: string): boolean {
+  if (!text) return false;
+  return PHANTOM_PATTERNS.some((re) => re.test(text));
+}
+
+/** Удаляет фразы/предложения с фантомными упоминаниями из текста, сохраняя остальное. */
+function stripPhantomText(text: string): string {
+  if (!text) return text;
+  const parts = text.split(/(?<=[.!?—])\s+/);
+  const clean = parts.filter((p) => !isPhantom(p));
+  const result = clean.join(" ").trim();
+  // Если весь текст был фантомным — вернём пустую строку
+  return result.length > 0 ? result : "";
+}
+
+/** Фильтрует массив строк от фантомных. */
+function stripPhantomArray(arr: string[]): string[] {
+  return arr.map(stripPhantomText).filter((s) => s.length > 0);
+}
+
 const VSTATUSES: VerificationStatus[] = ["confirmed", "partial", "conflict", "not_checked"];
 const CONSISTENCY = ["match", "partial", "mismatch"] as const;
 const VALUE_KEYS: CulturalValueKey[] = ["responsibility", "partnership", "entrepreneurship"];
@@ -387,14 +437,26 @@ const VALUE_LABELS: Record<CulturalValueKey, string> = {
 
 function normalizeVerification(v: any, etkAvailable: boolean): VerificationResult {
   const items: VerificationItem[] = Array.isArray(v?.items)
-    ? v.items.slice(0, 20).map((it: any) => ({
-        company: String(it?.company || "").slice(0, 200),
-        position: it?.position ? String(it.position).slice(0, 200) : undefined,
-        declared: String(it?.declared || "").slice(0, 300),
-        etk: it?.etk ? String(it.etk).slice(0, 300) : undefined,
-        status: VSTATUSES.includes(it?.status) ? it.status : "not_checked",
-        note: it?.note ? String(it.note).slice(0, 500) : undefined,
-      }))
+    ? v.items.slice(0, 20).map((it: any) => {
+        let status: VerificationStatus = VSTATUSES.includes(it?.status) ? it.status : "not_checked";
+        let note = it?.note ? String(it.note).slice(0, 500) : undefined;
+        // Если note содержит фантомные обоснования — чистим и доводим статус до confirmed
+        if (note && isPhantom(note)) {
+          note = stripPhantomText(note);
+          if (status === "conflict" || status === "partial") {
+            status = "confirmed";
+          }
+          if (!note) note = "Опыт подтверждён ЭТК.";
+        }
+        return {
+          company: String(it?.company || "").slice(0, 200),
+          position: it?.position ? String(it.position).slice(0, 200) : undefined,
+          declared: String(it?.declared || "").slice(0, 300),
+          etk: it?.etk ? String(it.etk).slice(0, 300) : undefined,
+          status,
+          note,
+        };
+      })
     : [];
 
   // Если ЭТК нет — принудительно all not_checked
@@ -409,9 +471,12 @@ function normalizeVerification(v: any, etkAvailable: boolean): VerificationResul
   else if (items.some((i) => i.status === "partial")) overall = "partial";
   else if (items.length && items.every((i) => i.status === "confirmed")) overall = "confirmed";
 
+  let summary = String(v?.summary || "").slice(0, 600);
+  if (isPhantom(summary)) summary = stripPhantomText(summary);
+
   return {
     status: overall,
-    summary: String(v?.summary || "").slice(0, 600),
+    summary,
     items,
     blockingConflict: hasConflict,
     etkAvailable,
@@ -424,8 +489,11 @@ function normalizeMotivation(
   timePressure: TimePressure,
 ): MotivationAnalysis {
   let score = clamp(m?.score, 0, 100, 50);
-  const redFlags = Array.isArray(m?.redFlags) ? m.redFlags.map(String).slice(0, 6) : [];
-  const greenFlags = Array.isArray(m?.greenFlags) ? m.greenFlags.map(String).slice(0, 6) : [];
+  // Фильтруем фантомные red flags по датам/округлениям
+  const redFlagsRaw = Array.isArray(m?.redFlags) ? m.redFlags.map(String).slice(0, 6) : [];
+  const redFlags = stripPhantomArray(redFlagsRaw).slice(0, 6);
+  const greenFlagsRaw = Array.isArray(m?.greenFlags) ? m.greenFlags.map(String).slice(0, 6) : [];
+  const greenFlags = stripPhantomArray(greenFlagsRaw).slice(0, 6);
 
   // Жёсткое правило: red flags → score ≤ 70
   if (redFlags.length > 0 && score > 70) score = 70;
@@ -444,9 +512,12 @@ function normalizeMotivation(
     urgencyNote = "Временной прессинг не обсуждался.";
   }
 
+  let mSummary = String(m?.summary || "").slice(0, 600);
+  if (isPhantom(mSummary)) mSummary = stripPhantomText(mSummary);
+
   return {
     score,
-    summary: String(m?.summary || "").slice(0, 600),
+    summary: mSummary,
     declaredReason: String(m?.declaredReason || "").slice(0, 400),
     recruiterReason,
     reasonConsistency,
@@ -502,7 +573,8 @@ function normalizeLoyalty(l: any, timeline: TimelineMetrics | null): LoyaltyScor
     sH = Math.round((sH + calculated) / 2);
   }
 
-  const flags: string[] = Array.isArray(l?.flags) ? l.flags.map(String).slice(0, 6) : [];
+  const rawFlags: string[] = Array.isArray(l?.flags) ? l.flags.map(String).slice(0, 6) : [];
+  const flags = stripPhantomArray(rawFlags);
 
   // Гарантируем флаги при низких баллах
   if (sH < 40 && !flags.some((f) => /смена|hopping|короткие|нестабильн/i.test(f))) {
@@ -677,6 +749,10 @@ function normalizeExecutiveSummary(
   let headline = String(raw?.headline || "").trim().slice(0, 300);
   let paragraph = String(raw?.paragraph || "").trim().slice(0, 800);
 
+  // Фильтр фантомных фраз
+  if (isPhantom(headline)) headline = stripPhantomText(headline);
+  if (isPhantom(paragraph)) paragraph = stripPhantomText(paragraph);
+
   // Cross-check: если headline говорит «низкий риск/рекомендован», а резолюция NOT_RECOMMENDED — переписываем
   const headlineSuggestsPositive = /рекоменд|низк\w*\s+риск|сильн|надёжн/i.test(headline);
   const headlineSuggestsNegative = /не\s+рекоменд|высок\w*\s+риск|конфликт|блокир/i.test(headline);
@@ -722,6 +798,8 @@ function normalizeExecutiveSummary(
           text: String(f?.text || "").slice(0, 300),
         }))
         .filter((f: KeyFinding) => f.text.length > 0)
+        // Вырезаем findings с фантомными формулировками
+        .filter((f: KeyFinding) => !isPhantom(f.text))
         .slice(0, 8)
     : [];
 
