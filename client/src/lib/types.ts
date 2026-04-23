@@ -57,6 +57,18 @@ export type {
   ConsistencyCheck,
   TimelineMetrics,
   EmploymentSpan,
+  // Linguistic Audit v1.0
+  LiwcCounters,
+  LiwcAnalysis,
+  RmBlockKind,
+  RmBlockScore,
+  RealityMonitoringAnalysis,
+  CognitiveLoadAnalysis,
+  AcidCriterion,
+  AcidBlockClassification,
+  AcidAnalysis,
+  LinguisticAuditVerdict,
+  LinguisticAudit,
 } from "@shared/schema";
 
 export type CheckListItem = {

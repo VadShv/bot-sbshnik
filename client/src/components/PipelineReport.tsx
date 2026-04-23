@@ -5,6 +5,10 @@ import type {
   ResolutionCode,
   CulturalValueKey,
   KeyFinding,
+  LinguisticAudit,
+  LinguisticAuditVerdict,
+  RmBlockScore,
+  AcidBlockClassification,
 } from "@/lib/types";
 import {
   CheckCircle2,
@@ -23,7 +27,12 @@ import {
   TrendingDown,
   Minus,
   CalendarRange,
+  Brain,
+  Eye,
+  BookText,
+  ClipboardCheck,
 } from "lucide-react";
+import { useState } from "react";
 
 // Формат месяцев в «2 г 3 мес»
 function formatMonths(m: number): string {
@@ -476,6 +485,9 @@ export function PipelineReport({ report }: { report: SingleStepReport }) {
         </Card>
       </div>
 
+      {/* Лингвистический аудит (4 методологии) */}
+      {report.linguisticAudit && <LinguisticSection audit={report.linguisticAudit} />}
+
       {/* Хронология опыта (локальные метрики) */}
       {report.timeline && report.timeline.spans.length > 0 && (
         <Card className="border-card-border bg-card p-5" data-testid="card-timeline">
@@ -542,4 +554,294 @@ export function PipelineReport({ report }: { report: SingleStepReport }) {
       )}
     </div>
   );
+}
+
+// ============================================================
+// Linguistic Audit section (4 methodologies)
+// ============================================================
+
+function verdictTone(v: LinguisticAuditVerdict | "real" | "ambiguous" | "constructed" | "honest" | "mixed" | "fabricated") {
+  // green=honest/real, yellow=mixed/ambiguous, orange=constructed, red=fabricated
+  if (v === "honest" || v === "real") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+  if (v === "mixed" || v === "ambiguous") return "border-amber-500/30 bg-amber-500/10 text-amber-300";
+  if (v === "constructed") return "border-orange-500/30 bg-orange-500/10 text-orange-300";
+  return "border-red-500/30 bg-red-500/10 text-red-300";
+}
+
+function verdictLabel(v: LinguisticAuditVerdict | "real" | "ambiguous" | "constructed"): string {
+  switch (v) {
+    case "honest": return "честный нарратив";
+    case "real": return "реальный опыт";
+    case "mixed": return "смешанный";
+    case "ambiguous": return "неоднозначный";
+    case "constructed": return "сконструирован";
+    case "fabricated": return "фальсификация";
+    default: return String(v);
+  }
+}
+
+function LinguisticSection({ audit }: { audit: LinguisticAudit }) {
+  const [open, setOpen] = useState<"liwc" | "rm" | "cl" | "acid" | null>("liwc");
+  const toggle = (k: "liwc" | "rm" | "cl" | "acid") => setOpen(open === k ? null : k);
+
+  return (
+    <Card className="border-card-border bg-card p-5" data-testid="card-linguistic">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Brain className="h-4 w-4 text-violet-400" />
+          <div className="font-semibold">Лингвистический аудит · 4 методологии</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full border px-2 py-0.5 text-[11px] ${verdictTone(audit.verdict)}`}>
+            {verdictLabel(audit.verdict)}
+          </span>
+          <div className="font-mono text-base font-bold tabular-nums text-violet-300" title="Лингвистический риск">
+            {audit.linguisticRisk}
+          </div>
+        </div>
+      </div>
+      <p className="mt-2 text-sm text-muted-foreground">{audit.headline}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{audit.summary}</p>
+
+      <div className="mt-4 grid gap-2">
+        {/* LIWC */}
+        <button
+          type="button"
+          onClick={() => toggle("liwc")}
+          className="flex w-full items-center justify-between rounded-md border border-card-border bg-background/40 px-3 py-2 text-left transition hover:bg-background/60"
+          data-testid="btn-liwc-toggle"
+        >
+          <div className="flex items-center gap-2">
+            <BookText className="h-4 w-4 text-sky-400" />
+            <span className="text-sm font-medium">LIWC · психолингвистический профиль</span>
+          </div>
+          <span className="font-mono text-xs text-muted-foreground">риск {audit.liwc.riskScore}</span>
+        </button>
+        {open === "liwc" && (
+          <div className="rounded-md border border-card-border bg-background/30 p-3 text-xs">
+            <p className="mb-2 text-muted-foreground">{audit.liwc.summary}</p>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              {[
+                ["«я»", audit.liwc.rates.firstPersonSingular],
+                ["«мы»", audit.liwc.rates.firstPersonPlural],
+                ["3-е лицо", audit.liwc.rates.thirdPerson],
+                ["нег. эмоции", audit.liwc.rates.negativeEmotions],
+                ["поз. эмоции", audit.liwc.rates.positiveEmotions],
+                ["исключители", audit.liwc.rates.exclusives],
+                ["функц. слова", audit.liwc.rates.functionWords],
+                ["когн. механ.", audit.liwc.rates.cognitiveMechanisms],
+              ].map(([label, val]) => (
+                <div key={String(label)} className="rounded border border-card-border bg-background/50 p-1.5 text-center">
+                  <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
+                  <div className="font-mono text-sm font-bold tabular-nums">{val}%</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {audit.liwc.markers.iDominant && <Chip label="я-доминирование" tone="orange" />}
+              {audit.liwc.markers.weDominant && <Chip label="мы-доминирование" tone="green" />}
+              {audit.liwc.markers.blamesOthers && <Chip label="обвинение других" tone="red" />}
+              {audit.liwc.markers.emotionalNegative && <Chip label="негативный аффект" tone="orange" />}
+              {audit.liwc.markers.highExclusives && <Chip label="высокие исключители (Newman 2003)" tone="red" />}
+              {audit.liwc.markers.lowCognitiveComplexity && <Chip label="низкая когнитивная сложность" tone="orange" />}
+            </div>
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Всего токенов: {audit.liwc.counters.totalTokens}. Методология: Pennebaker, Booth &amp; Francis (2003); Newman et al. (2003).
+            </p>
+          </div>
+        )}
+
+        {/* Reality Monitoring */}
+        <button
+          type="button"
+          onClick={() => toggle("rm")}
+          className="flex w-full items-center justify-between rounded-md border border-card-border bg-background/40 px-3 py-2 text-left transition hover:bg-background/60"
+          data-testid="btn-rm-toggle"
+        >
+          <div className="flex items-center gap-2">
+            <Eye className="h-4 w-4 text-emerald-400" />
+            <span className="text-sm font-medium">Reality Monitoring · 6 критериев по блокам</span>
+          </div>
+          <span className={`rounded-full border px-2 py-0.5 text-[11px] ${verdictTone(audit.realityMonitoring.verdict)}`}>
+            {verdictLabel(audit.realityMonitoring.verdict)} · {audit.realityMonitoring.averageScore}/12
+          </span>
+        </button>
+        {open === "rm" && (
+          <div className="rounded-md border border-card-border bg-background/30 p-3 text-xs">
+            <p className="mb-2 text-muted-foreground">{audit.realityMonitoring.summary}</p>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[11px]">
+                <thead>
+                  <tr className="border-b border-card-border text-left text-muted-foreground">
+                    <th className="py-1.5 pr-2">Блок</th>
+                    <th className="px-1.5 text-center">Сенс.</th>
+                    <th className="px-1.5 text-center">Простр.</th>
+                    <th className="px-1.5 text-center">Время</th>
+                    <th className="px-1.5 text-center">Аффект</th>
+                    <th className="px-1.5 text-center">Логика</th>
+                    <th className="px-1.5 text-center">Self</th>
+                    <th className="px-1.5 text-center">Σ</th>
+                    <th className="px-1.5 text-right">Вердикт</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {audit.realityMonitoring.blocks.map((b: RmBlockScore, i) => (
+                    <tr key={i} className="border-b border-card-border/40">
+                      <td className="py-1.5 pr-2 font-medium">{b.label}</td>
+                      <td className="px-1.5 text-center font-mono tabular-nums">{b.sensoryDetails}</td>
+                      <td className="px-1.5 text-center font-mono tabular-nums">{b.spatialContext}</td>
+                      <td className="px-1.5 text-center font-mono tabular-nums">{b.temporalContext}</td>
+                      <td className="px-1.5 text-center font-mono tabular-nums">{b.affect}</td>
+                      <td className="px-1.5 text-center font-mono tabular-nums">{b.logicalCoherence}</td>
+                      <td className="px-1.5 text-center font-mono tabular-nums">{b.selfReference}</td>
+                      <td className="px-1.5 text-center font-mono font-bold tabular-nums">{b.totalScore}</td>
+                      <td className="px-1.5 text-right">
+                        <span className={`rounded-full border px-1.5 py-0.5 ${verdictTone(b.verdict)}`}>
+                          {verdictLabel(b.verdict)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Каждый критерий: 0 (нет) · 1 (частично) · 2 (ярко). Сумма ≥9 = реальный опыт, 5–8 неоднозначно, ≤4 сконструировано. Методология: Johnson &amp; Raye (1981).
+            </p>
+          </div>
+        )}
+
+        {/* Cognitive Load */}
+        <button
+          type="button"
+          onClick={() => toggle("cl")}
+          className="flex w-full items-center justify-between rounded-md border border-card-border bg-background/40 px-3 py-2 text-left transition hover:bg-background/60"
+          data-testid="btn-cl-toggle"
+        >
+          <div className="flex items-center gap-2">
+            <Gauge className="h-4 w-4 text-amber-400" />
+            <span className="text-sm font-medium">Cognitive Load · маркеры перегрузки</span>
+          </div>
+          <span className="font-mono text-xs text-muted-foreground">риск {audit.cognitiveLoad.riskScore}</span>
+        </button>
+        {open === "cl" && (
+          <div className="rounded-md border border-card-border bg-background/30 p-3 text-xs">
+            <p className="mb-2 text-muted-foreground">{audit.cognitiveLoad.summary}</p>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              <div className="rounded border border-card-border bg-background/50 p-1.5 text-center">
+                <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Хеджирование</div>
+                <div className="font-mono text-sm font-bold tabular-nums">{audit.cognitiveLoad.hedgingCount}</div>
+              </div>
+              <div className="rounded border border-card-border bg-background/50 p-1.5 text-center">
+                <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Противоречия</div>
+                <div className="font-mono text-sm font-bold tabular-nums">{audit.cognitiveLoad.contradictionsCount}</div>
+              </div>
+              <div className="rounded border border-card-border bg-background/50 p-1.5 text-center">
+                <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Симметрия</div>
+                <div className={`font-mono text-sm font-bold tabular-nums ${audit.cognitiveLoad.structuralSymmetry > 60 ? "text-orange-300" : ""}`}>
+                  {audit.cognitiveLoad.structuralSymmetry}%
+                </div>
+              </div>
+              <div className="rounded border border-card-border bg-background/50 p-1.5 text-center">
+                <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Шаблонов</div>
+                <div className="font-mono text-sm font-bold tabular-nums">{audit.cognitiveLoad.repetitivePatterns.length}</div>
+              </div>
+            </div>
+            {audit.cognitiveLoad.symmetryNote && (
+              <p className="mt-2 text-[11px] text-muted-foreground">{audit.cognitiveLoad.symmetryNote}</p>
+            )}
+            {audit.cognitiveLoad.hedgingExamples.length > 0 && (
+              <div className="mt-2">
+                <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Примеры хеджирования</div>
+                <ul className="mt-1 space-y-0.5">
+                  {audit.cognitiveLoad.hedgingExamples.map((ex, i) => (
+                    <li key={i} className="text-[11px] italic text-muted-foreground">«{ex}»</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {audit.cognitiveLoad.contradictions.length > 0 && (
+              <div className="mt-2">
+                <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Противоречия</div>
+                <ul className="mt-1 space-y-0.5">
+                  {audit.cognitiveLoad.contradictions.map((c, i) => (
+                    <li key={i} className="text-[11px] text-muted-foreground">
+                      <span className="text-emerald-300">«{c.claim}»</span> vs <span className="text-red-300">«{c.counter}»</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Методология: Vrij (2008) «Lying Is Harder Than Truth». Высокая структурная симметрия (&gt;60%) — признак шаблонного или скопированного описания.
+            </p>
+          </div>
+        )}
+
+        {/* ACID */}
+        <button
+          type="button"
+          onClick={() => toggle("acid")}
+          className="flex w-full items-center justify-between rounded-md border border-card-border bg-background/40 px-3 py-2 text-left transition hover:bg-background/60"
+          data-testid="btn-acid-toggle"
+        >
+          <div className="flex items-center gap-2">
+            <ClipboardCheck className="h-4 w-4 text-pink-400" />
+            <span className="text-sm font-medium">ACID · классификация нарратива</span>
+          </div>
+          <span className={`rounded-full border px-2 py-0.5 text-[11px] ${verdictTone(audit.acid.overallVerdict)}`}>
+            {verdictLabel(audit.acid.overallVerdict)}
+          </span>
+        </button>
+        {open === "acid" && (
+          <div className="rounded-md border border-card-border bg-background/30 p-3 text-xs">
+            <p className="mb-2 text-muted-foreground">{audit.acid.summary}</p>
+            <div className="grid gap-2">
+              {audit.acid.blocks.map((b: AcidBlockClassification, i) => (
+                <div key={i} className="rounded border border-card-border bg-background/50 p-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{b.label}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs tabular-nums text-muted-foreground">{b.honestScore}/10</span>
+                      <span className={`rounded-full border px-1.5 py-0.5 text-[10px] ${verdictTone(b.verdict)}`}>
+                        {verdictLabel(b.verdict)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-1.5 grid grid-cols-2 gap-1 sm:grid-cols-5">
+                    {b.criteria.map((c) => (
+                      <div
+                        key={c.key}
+                        className={`rounded border px-1.5 py-1 text-[10px] ${
+                          c.honestIndicator
+                            ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-300"
+                            : "border-red-500/20 bg-red-500/5 text-red-300/70"
+                        }`}
+                        title={c.evidence || ""}
+                      >
+                        {c.honestIndicator ? "✓" : "✗"} {c.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Методология: Steller &amp; Köhnken (1989), Criteria-Based Content Analysis. 10 критериев честного нарратива: ≥8 = честный, 5–7 смешанный, 3–4 сконструирован, ≤2 фальсификация.
+            </p>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function Chip({ label, tone }: { label: string; tone: "green" | "orange" | "red" }) {
+  const cls =
+    tone === "green"
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+      : tone === "orange"
+      ? "border-orange-500/30 bg-orange-500/10 text-orange-300"
+      : "border-red-500/30 bg-red-500/10 text-red-300";
+  return <span className={`rounded-full border px-2 py-0.5 text-[10px] ${cls}`}>{label}</span>;
 }

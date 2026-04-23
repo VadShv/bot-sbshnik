@@ -1,5 +1,6 @@
 import { yandexComplete } from "./yandex";
 import { buildTimeline, formatMonths } from "./timeline";
+import { runLinguisticAudit } from "./linguistics";
 import type {
   RecruiterForm,
   EtkStructured,
@@ -22,6 +23,7 @@ import type {
   KeyFinding,
   ConsistencyCheck,
   TimelineMetrics,
+  LinguisticAudit,
 } from "@shared/schema";
 
 // ==========================================================
@@ -145,6 +147,29 @@ function buildTimelineBlock(timeline: TimelineMetrics | null): string {
   return `${header}\n${lines}`;
 }
 
+function buildLinguisticBlock(audit: LinguisticAudit): string {
+  const l = audit.liwc;
+  const rm = audit.realityMonitoring;
+  const cl = audit.cognitiveLoad;
+  const ac = audit.acid;
+  const rmBlocksTxt = rm.blocks.map((b) =>
+    `    • ${b.label}: сенсорика=${b.sensoryDetails}, пространство=${b.spatialContext}, время=${b.temporalContext}, аффект=${b.affect}, логика=${b.logicalCoherence}, self-ref=${b.selfReference} → сумма ${b.totalScore}/12 (${b.verdict})`
+  ).join("\n") || "    — блоки не выделены —";
+  const acidBlocksTxt = ac.blocks.map((b) =>
+    `    • ${b.label}: honest-score ${b.honestScore}/10 → ${b.verdict}`
+  ).join("\n") || "    — блоки не выделены —";
+  return `[ЛИНГВИСТИЧЕСКИЙ АУДИТ — уже посчитано детерминированно, НЕ пересчитывай цифры]
+LIWC (на 100 токенов): я=${l.rates.firstPersonSingular}%, мы=${l.rates.firstPersonPlural}%, 3-л=${l.rates.thirdPerson}%, нег.эмоц=${l.rates.negativeEmotions}%, поз.эмоц=${l.rates.positiveEmotions}%, исключители=${l.rates.exclusives}%, функц.слова=${l.rates.functionWords}%, когн.механ=${l.rates.cognitiveMechanisms}%.
+LIWC-маркеры: iDominant=${l.markers.iDominant}, weDominant=${l.markers.weDominant}, blamesOthers=${l.markers.blamesOthers}, emotionalNegative=${l.markers.emotionalNegative}, highExclusives=${l.markers.highExclusives}, lowCognitiveComplexity=${l.markers.lowCognitiveComplexity}. Риск LIWC: ${l.riskScore}/100.
+Reality Monitoring (средний балл ${rm.averageScore}/12, вердикт ${rm.verdict}):
+${rmBlocksTxt}
+Cognitive Load: хеджирование=${cl.hedgingCount}, противоречий=${cl.contradictionsCount}, структурная симметрия=${cl.structuralSymmetry}%, повторяющихся шаблонов=${cl.repetitivePatterns.length}. Риск CL: ${cl.riskScore}/100.
+ACID (overallVerdict: ${ac.overallVerdict}):
+${acidBlocksTxt}
+
+Итоговый лингвистический риск: ${audit.linguisticRisk}/100, вердикт: ${audit.verdict}.`;
+}
+
 function buildAnalyzePrompt(
   resumeText: string,
   etk: EtkStructured,
@@ -152,6 +177,7 @@ function buildAnalyzePrompt(
   referencesText: string,
   form: RecruiterForm,
   timeline: TimelineMetrics | null,
+  linguistic: LinguisticAudit,
 ): string {
   const nowIso = new Date().toISOString().slice(0, 10);
   return `Проведи ЕДИНЫЙ анализ кандидата по 4 модулям + собери executive summary. Верни строго JSON по схеме.
@@ -182,6 +208,8 @@ ${(interviewText || "— не предоставлено —").slice(0, 4000)}
 """
 ${(referencesText || "— не предоставлено —").slice(0, 3000)}
 """
+
+${buildLinguisticBlock(linguistic)}
 
 [ФОРМА РЕКРУТЕРА]
 • Причина поиска работы (по словам рекрутера): ${reasonLabel(form.searchReason)}
@@ -246,6 +274,17 @@ flags — 0–5 коротких маркеров рисков лояльнос�
 СОГЛАСОВАННОСТЬ: если sHistory < 40 — обязан быть flag о job-hopping. Если sRecruiter < 40 — обязан быть flag об отношениях с бывшими.
 
 ==============================
+МОДУЛЬ 5 — ЛИНГВИСТИЧЕСКИЙ АУДИТ (ИНТЕРПРЕТАЦИЯ, НЕ ПЕРЕСЧЁТ)
+==============================
+Цифры уже посчитаны в блоке [ЛИНГВИСТИЧЕСКИЙ АУДИТ]. Твоя задача — дать КАЧЕСТВЕННУЮ интерпретацию по каждой из 4 методик в 1–2 предложения. НЕ пересчитывай проценты, вердикты и счётчики. Используй их как вход для психологической оценки:
+• liwcSummary — психолингвистический профиль (1–2 предложения): кто говорит «я» vs «мы», есть ли признаки обвинения, абстрактности или обмана (по Pennebaker/Newman).
+• rmSummary — Reality Monitoring (1–2 предложения): насколько опыт/достижения/проекты выглядят как прожитый опыт в противовес конструированию.
+• clSummary — Cognitive Load (1–2 предложения): шаблонность описаний, хеджирование, противоречия.
+• acidSummary — ACID (1–2 предложения): какие блоки похожи на честный нарратив, а какие на сконструированный.
+• linguisticHeadline — 1 предложение для сводки руководителю.
+• linguisticOverallSummary — 2–3 предложения: общий лингвистический профиль.
+
+==============================
 EXECUTIVE SUMMARY (СВОДКА ДЛЯ РУКОВОДИТЕЛЯ)
 ==============================
 Собери непротиворечивую сводку, которая ОДНОЗНАЧНО следует из модулей выше.
@@ -300,6 +339,14 @@ EXECUTIVE SUMMARY (СВОДКА ДЛЯ РУКОВОДИТЕЛЯ)
       {"type": "strength|risk|neutral", "module": "verification|motivation|culturalFit|loyalty", "text": "..."}
     ],
     "consistency": {"status": "ok|warning|conflict", "notes": ["..."]}
+  },
+  "linguistic": {
+    "liwcSummary": "1-2 предложения",
+    "rmSummary": "1-2 предложения",
+    "clSummary": "1-2 предложения",
+    "acidSummary": "1-2 предложения",
+    "linguisticHeadline": "1 предложение",
+    "linguisticOverallSummary": "2-3 предложения"
   }
 }
 
@@ -897,6 +944,9 @@ export async function runPipelineAnalysis(
   // Pre-process: считаем хронологию ЛОКАЛЬНО, чтобы LLM не делал арифметику
   const timeline = buildTimeline(resumeText, etk);
 
+  // Pre-process: лингвистический аудит (все цифры — детерминированно)
+  const linguisticBase = runLinguisticAudit(resumeText, interviewText || "");
+
   const userPrompt = buildAnalyzePrompt(
     resumeText,
     etk,
@@ -904,6 +954,7 @@ export async function runPipelineAnalysis(
     referencesText,
     form,
     timeline,
+    linguisticBase,
   );
 
   let parsed: any = null;
@@ -969,8 +1020,10 @@ export async function runPipelineAnalysis(
     form,
   );
 
+  const linguisticAudit = mergeLinguisticAudit(linguisticBase, parsed?.linguistic);
+
   return {
-    version: "3.1",
+    version: "3.2",
     candidateName,
     createdAt: Date.now(),
     recruiterForm: form,
@@ -979,10 +1032,40 @@ export async function runPipelineAnalysis(
     motivation,
     culturalFit,
     loyalty,
+    linguisticAudit,
     compositeScore,
     resolution,
     executiveSummary,
     timeline: timeline || undefined,
     rawAnalysisNote: fallbackNote,
+  };
+}
+
+// ==========================================================
+// Merge: LLM-интерпретации накладываем на детерминированную базу
+// ==========================================================
+function pickStr(v: any, fallback: string): string {
+  if (typeof v === "string" && v.trim().length > 0) {
+    const clean = stripPhantomText(v.trim());
+    return clean.length > 0 ? clean.slice(0, 800) : fallback;
+  }
+  return fallback;
+}
+
+function mergeLinguisticAudit(base: LinguisticAudit, llm: any): LinguisticAudit {
+  const liwcSummary = pickStr(llm?.liwcSummary, base.liwc.summary);
+  const rmSummary = pickStr(llm?.rmSummary, base.realityMonitoring.summary);
+  const clSummary = pickStr(llm?.clSummary, base.cognitiveLoad.summary);
+  const acidSummary = pickStr(llm?.acidSummary, base.acid.summary);
+  const headline = pickStr(llm?.linguisticHeadline, base.headline);
+  const overall = pickStr(llm?.linguisticOverallSummary, base.summary);
+  return {
+    ...base,
+    liwc: { ...base.liwc, summary: liwcSummary },
+    realityMonitoring: { ...base.realityMonitoring, summary: rmSummary },
+    cognitiveLoad: { ...base.cognitiveLoad, summary: clSummary },
+    acid: { ...base.acid, summary: acidSummary },
+    headline,
+    summary: overall,
   };
 }

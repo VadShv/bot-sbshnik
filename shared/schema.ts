@@ -531,9 +531,134 @@ export type TimelineMetrics = {
   source: "resume" | "etk" | "merged";
 };
 
+// ============================================================
+// МОДУЛЬ 5 — LINGUISTIC AUDIT v1.0
+// 4 методики: LIWC · Reality Monitoring · Cognitive Load · ACID
+// ============================================================
+
+// --- LIWC (Linguistic Inquiry and Word Count) ---
+export type LiwcCounters = {
+  totalTokens: number;                // всего слов в анализируемом тексте
+  firstPersonSingular: number;        // "я", "мой", "мне", "меня", "мной"
+  firstPersonPlural: number;          // "мы", "наш", "нам", "нас", "нами"
+  thirdPerson: number;                // "они", "их", "им", "ими", "он", "она"
+  negativeEmotions: number;           // "плохо", "ужасно", "ненавижу", "злой", "невыносимо"
+  positiveEmotions: number;           // "отлично", "рад", "благодарен", "горжусь"
+  exclusives: number;                 // "кроме", "без", "не", "никогда", "только", "исключительно"
+  functionWords: number;              // предлоги + союзы + частицы
+  cognitiveMechanisms: number;        // "потому что", "поэтому", "решил", "думал"
+};
+
+export type LiwcAnalysis = {
+  counters: LiwcCounters;
+  // Нормированные частоты на 100 токенов
+  rates: {
+    firstPersonSingular: number;
+    firstPersonPlural: number;
+    thirdPerson: number;
+    negativeEmotions: number;
+    positiveEmotions: number;
+    exclusives: number;
+    functionWords: number;
+    cognitiveMechanisms: number;
+  };
+  // Психолингвистические маркеры (интерпретация счётчиков)
+  markers: {
+    iDominant: boolean;                // "я" >> "мы" → индивидуализм / нарциссизм
+    weDominant: boolean;               // "мы" >> "я" → командность (или размывание ответственности)
+    blamesOthers: boolean;             // высокий 3rd person + negativeEmotions
+    emotionalNegative: boolean;        // negativeEmotions > 2%
+    highExclusives: boolean;           // exclusives > 5% (признак обмана по Newman et al. 2003)
+    lowCognitiveComplexity: boolean;   // функциональные слова и причинно-следственные связки ниже нормы
+  };
+  // Риск-оценка 0–100 (чем выше, тем более подозрительный профиль)
+  riskScore: number;
+  summary: string;                     // 1–2 предложения интерпретации
+};
+
+// --- Reality Monitoring (Johnson & Raye 1981) ---
+export type RmBlockKind = "experience" | "achievements" | "projects" | "about";
+
+export type RmBlockScore = {
+  kind: RmBlockKind;
+  label: string;                       // "Опыт работы", "Достижения"...
+  sampleText: string;                  // первые 300 симв. блока для контекста
+  // 6 критериев RM (каждый 0–2: 0 отсутствует, 1 частично, 2 ярко)
+  sensoryDetails: 0 | 1 | 2;           // сенсорные детали (цвета, звуки, ощущения)
+  spatialContext: 0 | 1 | 2;           // географический/пространственный контекст
+  temporalContext: 0 | 1 | 2;          // временные якоря (конкретные даты, последовательность)
+  affect: 0 | 1 | 2;                   // эмоциональная реакция участника
+  logicalCoherence: 0 | 1 | 2;         // связность причина→следствие
+  selfReference: 0 | 1 | 2;            // указание на собственную роль/действие
+  totalScore: number;                  // 0–12 сумма
+  verdict: "real" | "ambiguous" | "constructed"; // по сумме: ≥9 real, 5–8 ambiguous, ≤4 constructed
+  note?: string;
+};
+
+export type RealityMonitoringAnalysis = {
+  blocks: RmBlockScore[];
+  averageScore: number;                // средняя сумма по всем блокам
+  verdict: "real" | "mixed" | "constructed";
+  summary: string;
+};
+
+// --- Cognitive Load (Vrij 2008, «Lying Is Harder Than Truth») ---
+export type CognitiveLoadAnalysis = {
+  hedgingCount: number;                // "возможно", "примерно", "около", "в целом", "якобы"
+  hedgingExamples: string[];           // до 4 цитат
+  contradictionsCount: number;         // явные противоречия между блоками
+  contradictions: Array<{              // до 4 пар
+    claim: string;
+    counter: string;
+  }>;
+  structuralSymmetry: number;          // 0–100: доля одинаковых шаблонов описания работ (высокая = шаблонность)
+  symmetryNote?: string;
+  repetitivePatterns: string[];        // до 4 повторяющихся оборотов
+  riskScore: number;                   // 0–100 (выше = сильнее следы когнитивной перегрузки)
+  summary: string;
+};
+
+// --- ACID (Assessment Criteria Indicative of Deception) ---
+export type AcidCriterion = {
+  key: string;                         // "first_person_anchor", "unique_details", ...
+  label: string;                       // человекочитаемый
+  honestIndicator: boolean;            // true = поведение честного нарратива присутствует
+  evidence?: string;                   // цитата / заметка
+};
+
+export type AcidBlockClassification = {
+  kind: RmBlockKind;
+  label: string;
+  honestScore: number;                 // 0–10: число «honest» критериев
+  verdict: "honest" | "mixed" | "constructed" | "fabricated";
+  criteria: AcidCriterion[];           // 10 критериев
+};
+
+export type AcidAnalysis = {
+  blocks: AcidBlockClassification[];
+  overallVerdict: "honest" | "mixed" | "constructed" | "fabricated";
+  summary: string;
+};
+
+// --- Сводный отчёт по лингвистическому аудиту ---
+export type LinguisticAuditVerdict = "honest" | "mixed" | "constructed" | "fabricated";
+
+export type LinguisticAudit = {
+  version: "1.0";
+  liwc: LiwcAnalysis;
+  realityMonitoring: RealityMonitoringAnalysis;
+  cognitiveLoad: CognitiveLoadAnalysis;
+  acid: AcidAnalysis;
+  // Итоговый лингвистический риск 0–100 (0 = честный, 100 = фальсификация)
+  linguisticRisk: number;
+  verdict: LinguisticAuditVerdict;
+  headline: string;                    // 1 предложение для executive summary
+  summary: string;                     // 2–3 предложения
+};
+
 // --- Итоговый отчёт пайплайна ---
 export type SingleStepReport = {
-  version: "3.1";
+  version: "3.2";
   candidateName: string | null;
   createdAt: number;
   recruiterForm: RecruiterForm;
@@ -542,9 +667,10 @@ export type SingleStepReport = {
   motivation: MotivationAnalysis;
   culturalFit: CulturalFitV3;
   loyalty: LoyaltyScore;
+  linguisticAudit?: LinguisticAudit;     // новый 4-й слой
   compositeScore: number;
   resolution: FinalResolution;
-  executiveSummary?: ExecutiveSummary;   // новый блок — сводка для руководителя
-  timeline?: TimelineMetrics;            // локально рассчитанные метрики опыта
-  rawAnalysisNote?: string;              // служебное: fallback-сообщение
+  executiveSummary?: ExecutiveSummary;
+  timeline?: TimelineMetrics;
+  rawAnalysisNote?: string;
 };
