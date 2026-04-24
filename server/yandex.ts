@@ -1,4 +1,5 @@
 import type { Finding, Evidence, VerificationStep, RedFlag, RecruiterAction, SubcategoryScore, FindingCategory } from "@shared/schema";
+import { isPhantom, stripPhantomText, stripPhantomArray } from "./pipelineAnalyzer";
 
 const YANDEX_API_KEY = process.env.YANDEX_API_KEY || "";
 const YANDEX_FOLDER_ID = process.env.YANDEX_FOLDER_ID || "b1gncpokmh18knpjgadr";
@@ -133,7 +134,22 @@ const SYSTEM_PROMPT = `Ты — ведущий аналитик Службы Б�
 - Тон сухой, юридический, экспертный. Без комплиментов и маркетинга.
 - ВЕРНИ СТРОГО JSON без markdown и комментариев.`;
 
-const ANALYZE_PROMPT = (resumeText: string, deterministicFindings: Finding[]) => `Проведи ГЛУБОКИЙ многоуровневый анализ резюме по продвинутой методологии. Не ограничивайся поверхностными сигналами — ищи скрытые противоречия, анализируй хронологию, сопоставляй заявленный стек с реальной сложностью задач, проверяй консистентность стиля.
+const ANALYZE_PROMPT = (resumeText: string, deterministicFindings: Finding[]) => {
+  const nowIso = new Date().toISOString().slice(0, 10);
+  const nowYear = new Date().getUTCFullYear();
+  const nowMonth = new Date().getUTCMonth() + 1;
+  return `Проведи ГЛУБОКИЙ многоуровневый анализ резюме по продвинутой методологии. Не ограничивайся поверхностными сигналами — ищи скрытые противоречия, анализируй хронологию, сопоставляй заявленный стек с реальной сложностью задач, проверяй консистентность стиля.
+
+[ТЕКУЩАЯ ДАТА] ${nowIso} — это «сегодня». Календарный год: ${nowYear}, месяц: ${nowMonth}. Все даты ДО этой — ПРОШЛОЕ. Все даты ПОСЛЕ этой — будущее. В этом резюме год ${nowYear} — НАСТОЯЩЕЕ, не будущее.
+
+⛔ АБСОЛЮТНЫЙ ЗАПРЕТ на любые формулировки (любые такие будут УДАЛЕНЫ):
+1. «Опыт в будущем», «даты из будущего», «работа в будущем», «на X лет в будущем», «будущее время».
+2. «телепорт», «аномалии хронологии», «хронологическое противоречие», «временное противоречие».
+3. «указывает на фальсификацию» как вывод из сравнения дат.
+4. Даты вида «апрель 2024 — по настоящее время (2 года)» НОРМАЛЬНЫ, если [ТЕКУЩАЯ ДАТА] = ${nowIso} позже даты начала. НЕ трактуй их как признак фальсификации.
+5. Периоды вида «N года — ${nowYear} год» где N <= ${nowYear} — НОРМА, не «будущее».
+
+Если кандидат пишет «по ${nowYear} год» или «по настоящее время» — это не будущее, это сейчас.
 
 ==============================
 РЕЖИМ PII-FREE (критично)
@@ -258,6 +274,7 @@ ${deterministicFindings.length === 0 ? "— ничего автоматичес�
 """
 ${resumeText.slice(0, 12000)}
 """`;
+};
 
 // ============ Типы ответа LLM ============
 
@@ -320,43 +337,64 @@ function normalizeVerificationSteps(arr: any): VerificationStep[] {
   })).filter((s: VerificationStep) => s.action.length > 0);
 }
 
-function normalizeFinding(f: any, i: number): Finding {
+function normalizeFinding(f: any, i: number): Finding | null {
   const severity = SEVERITIES.includes(f?.severity) ? f.severity : "medium";
   const category = CATEGORIES.includes(f?.category) ? f.category : "other";
+  const rawTitle = String(f?.title || "Без заголовка").slice(0, 200);
+  const rawDesc = String(f?.description || "").slice(0, 2000);
+  // Если весь finding — фантом про будущее/телепорт, выкидываем целиком
+  if (isPhantom(rawTitle)) return null;
+  if (isPhantom(rawDesc)) return null;
+  const title = stripPhantomText(rawTitle);
+  const description = stripPhantomText(rawDesc);
+  if (!title || title.length === 0) return null;
+  const rawImpact = f?.impact ? String(f.impact).slice(0, 400) : undefined;
+  const impact = rawImpact ? (isPhantom(rawImpact) ? undefined : stripPhantomText(rawImpact) || undefined) : undefined;
+  const evidence = Array.isArray(f?.evidence) ? stripPhantomArray(f.evidence.map(String)).slice(0, 5) : [];
   return {
     id: String(f?.id || `llm-${i}`).slice(0, 60),
-    title: String(f?.title || "Без заголовка").slice(0, 200),
+    title,
     category,
     severity,
     score: clamp(f?.score, 0, 100, 50),
     confidence: clamp(f?.confidence, 0, 100, 60),
-    description: String(f?.description || "").slice(0, 2000),
-    impact: f?.impact ? String(f.impact).slice(0, 400) : undefined,
-    evidence: Array.isArray(f?.evidence) ? f.evidence.map(String).slice(0, 5) : [],
+    description,
+    impact,
+    evidence,
     evidenceDetailed: normalizeEvidence(f?.evidenceDetailed),
     verificationSteps: normalizeVerificationSteps(f?.verificationSteps),
   };
 }
 
 function normalizeCategory(cat: any) {
+  const rawSummary = String(cat?.summary || "").slice(0, 800);
   return {
     score: clamp(cat?.score, 0, 100, 0),
-    summary: String(cat?.summary || "").slice(0, 800),
+    summary: stripPhantomText(rawSummary),
     confidence: clamp(cat?.confidence, 0, 100, 60),
     findings: Array.isArray(cat?.findings)
-      ? cat.findings.map((f: any, i: number) => normalizeFinding(f, i))
+      ? (cat.findings
+          .map((f: any, i: number) => normalizeFinding(f, i))
+          .filter((f: Finding | null): f is Finding => f !== null) as Finding[])
       : [],
   };
 }
 
 function normalizeRedFlags(arr: any): RedFlag[] {
   if (!Array.isArray(arr)) return [];
-  return arr.slice(0, 5).map((r: any) => ({
-    title: String(r?.title || "").slice(0, 200),
-    severity: r?.severity === "critical" ? "critical" : "high",
-    reason: String(r?.reason || "").slice(0, 500),
-    findingId: r?.findingId ? String(r.findingId).slice(0, 60) : undefined,
-  })).filter((r: RedFlag) => r.title.length > 0);
+  return arr.slice(0, 5).map((r: any) => {
+    const rawTitle = String(r?.title || "").slice(0, 200);
+    const rawReason = String(r?.reason || "").slice(0, 500);
+    if (isPhantom(rawTitle) || isPhantom(rawReason)) {
+      return { title: "", severity: "high" as const, reason: "", findingId: undefined };
+    }
+    return {
+      title: stripPhantomText(rawTitle),
+      severity: r?.severity === "critical" ? "critical" as const : "high" as const,
+      reason: stripPhantomText(rawReason),
+      findingId: r?.findingId ? String(r.findingId).slice(0, 60) : undefined,
+    };
+  }).filter((r: RedFlag) => r.title.length > 0);
 }
 
 function normalizeRecruiterActionPlan(arr: any): RecruiterAction[] {
@@ -388,20 +426,20 @@ export async function yandexAnalyze(
     const parsed = JSON.parse(jsonStr);
     return {
       candidateName: parsed?.candidateName ?? null,
-      executiveSummary: String(parsed?.executiveSummary || "").slice(0, 1200),
+      executiveSummary: stripPhantomText(String(parsed?.executiveSummary || "").slice(0, 1200)),
       confidence: clamp(parsed?.confidence, 0, 100, 70),
       positiveSignals: Array.isArray(parsed?.positiveSignals)
-        ? parsed.positiveSignals.map(String).slice(0, 8)
+        ? stripPhantomArray(parsed.positiveSignals.map(String)).slice(0, 8)
         : [],
       redFlags: normalizeRedFlags(parsed?.redFlags),
       risks: normalizeCategory(parsed?.risks),
       inflation: normalizeCategory(parsed?.inflation),
       wolves: normalizeCategory(parsed?.wolves),
       interviewQuestions: Array.isArray(parsed?.interviewQuestions)
-        ? parsed.interviewQuestions.map(String).slice(0, 12)
+        ? stripPhantomArray(parsed.interviewQuestions.map(String)).slice(0, 12)
         : [],
       sbRecommendations: Array.isArray(parsed?.sbRecommendations)
-        ? parsed.sbRecommendations.map(String).slice(0, 10)
+        ? stripPhantomArray(parsed.sbRecommendations.map(String)).slice(0, 10)
         : [],
       recruiterActionPlan: normalizeRecruiterActionPlan(parsed?.recruiterActionPlan),
     };

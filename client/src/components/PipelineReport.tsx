@@ -34,6 +34,22 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+// Идет слово по уровню образования
+function levelLabel(level: string): string {
+  switch (level) {
+    case "bachelor": return "бакалавр";
+    case "master": return "магистр";
+    case "specialist": return "специалитет";
+    case "phd": return "PhD/кандидат";
+    case "college": return "колледж";
+    case "school": return "школа";
+    case "high": return "высшее";
+    case "secondary": return "среднее";
+    case "courses": return "курсы";
+    default: return level;
+  }
+}
+
 // Формат месяцев в «2 г 3 мес»
 function formatMonths(m: number): string {
   if (m < 12) return `${m} мес`;
@@ -534,6 +550,33 @@ export function PipelineReport({ report }: { report: SingleStepReport }) {
               </div>
             ))}
           </div>
+
+          {/* Образование — для сравнения с периодами работы */}
+          {report.timeline.education && report.timeline.education.length > 0 && (
+            <div className="mt-4">
+              <div className="flex items-center gap-2 mb-2">
+                <BookText className="h-4 w-4 text-primary/80" />
+                <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Образование</div>
+              </div>
+              <div className="space-y-1.5">
+                {report.timeline.education.slice(0, 8).map((e, i) => (
+                  <div key={i} className="flex items-baseline justify-between gap-2 rounded border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs">
+                    <div className="flex-1 truncate">
+                      <span className="font-medium">{e.institution}</span>
+                      {e.field && <span className="text-muted-foreground"> · {e.field}</span>}
+                      {e.level && <span className="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-primary/80">{levelLabel(e.level)}</span>}
+                    </div>
+                    <div className="font-mono text-[10px] text-muted-foreground">
+                      {e.startISO ?? "?"} — {e.endISO ?? "по наст.время"}
+                    </div>
+                    <div className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+                      {typeof e.months === "number" && e.months > 0 ? formatMonths(e.months) : "—"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </Card>
       )}
 

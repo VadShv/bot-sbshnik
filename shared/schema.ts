@@ -521,6 +521,16 @@ export type EmploymentSpan = {
   source: "resume" | "etk";
 };
 
+export type EducationSpan = {
+  institution: string;              // название вуза / учебного заведения
+  degree?: string;                  // бакалавр / магистр / специалитет / кандидат и т.д.
+  field?: string;                   // специальность / факультет
+  startISO: string | null;          // YYYY-MM-DD начало
+  endISO: string | null;            // YYYY-MM-DD окончание / null если сейчас учится
+  months: number | null;            // длительность в месяцах
+  level?: "bachelor" | "master" | "specialist" | "phd" | "college" | "school" | "high" | "secondary" | "courses" | "other";
+};
+
 export type TimelineMetrics = {
   totalMonths: number;              // общий стаж в месяцах
   jobsCount: number;                // число позиций
@@ -528,6 +538,7 @@ export type TimelineMetrics = {
   shortStintsCount: number;         // <12 мес
   gapsMonths: number;               // суммарные пробелы между работами
   spans: EmploymentSpan[];
+  education?: EducationSpan[];      // периоды обучения (опционально)
   source: "resume" | "etk" | "merged";
 };
 

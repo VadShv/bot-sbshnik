@@ -105,19 +105,11 @@ function findingsChronology(text: string, now: Date): Finding[] {
   const periods = extractPeriods(text);
   if (periods.length < 2) return findings;
 
-  // Будущие даты
+  // Проверки «будущих дат» отключены по требованию пользователя —
+  // текущая дата берётся строго из new Date() (см. now), и сравнения с ней
+  // часто выдают ложно-позитивные результаты на периодах вида «по 2026 год».
+  // Оставляем только reverse-dates (end < start), это объективный косяк.
   for (const p of periods) {
-    if (p.start > now || (p.end !== "present" && p.end > new Date(now.getFullYear() + 1, 0, 1))) {
-      findings.push({
-        id: "future-date",
-        title: "Даты из будущего",
-        severity: "high",
-        score: 75,
-        confidence: 95,
-        description: "В резюме указаны даты работы, которые ещё не наступили — признак небрежности или фабрикации.",
-        evidence: [p.raw],
-      });
-    }
     if (p.end !== "present" && p.end < p.start) {
       findings.push({
         id: "reverse-dates",
@@ -201,19 +193,8 @@ function findingsEducation(text: string, now: Date): Finding[] {
     }
   }
 
-  // Вуз + дата окончания в будущем >2 лет
-  const futureYr = yrs.find((y) => y > now.getFullYear() + 2);
-  if (futureYr) {
-    findings.push({
-      id: "future-graduation",
-      title: "Нереалистичная дата окончания образования",
-      severity: "high",
-      score: 70,
-      confidence: 90,
-      description: `Указан год окончания ${futureYr}, что более чем на 2 года в будущем.`,
-      evidence: [String(futureYr)],
-    });
-  }
+  // Проверка «год окончания в будущем» отключена по требованию пользователя —
+  // много ложных срабатываний, LLM уже знает [ТЕКУЩУЮ ДАТУ].
 
   return findings;
 }

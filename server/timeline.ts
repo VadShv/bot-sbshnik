@@ -4,7 +4,7 @@
 // не считала даты вручную) и для UI-отчёта.
 // ==========================================================
 
-import type { EtkStructured, EmploymentSpan, TimelineMetrics } from "@shared/schema";
+import type { EtkStructured, EmploymentSpan, TimelineMetrics, EducationSpan } from "@shared/schema";
 
 const RU_MONTHS: Record<string, number> = {
   "янв": 1, "январ": 1,
@@ -202,7 +202,165 @@ function summarizeSpans(spans: EmploymentSpan[], source: "resume" | "etk" | "mer
 
 export function buildTimeline(resumeText: string, etk: EtkStructured): TimelineMetrics | null {
   // ЭТК — приоритетный источник, но если ЭТК нет — берём из резюме
-  return buildTimelineFromEtk(etk) || buildTimelineFromResume(resumeText);
+  const tl = buildTimelineFromEtk(etk) || buildTimelineFromResume(resumeText);
+  if (tl) {
+    const education = extractEducationFromText(resumeText);
+    if (education.length) tl.education = education;
+  }
+  return tl;
+}
+
+// ==========================================================
+// Парсер образования из текста резюме.
+// Ищет секции «Образование», «Высшее образование» и т.п.,
+// извлекает периоды обучения + название ВУЗа + степень.
+// ==========================================================
+
+const EDU_SECTION_RE = /^(\s*)(образование|высшее\s+образование|образование\s+и\s+повышение|academic\s+background|education)(\s*[:\-]?)\s*$/i;
+const EDU_END_RE = /^(\s*)(опыт\s+работы|работа|experience|навыки|skills|ключевые\s+навыки|профессиональные\s+навыки|языки|languages|дополнительное\s+образование|курсы|сертификаты|о\s+себе|about|контакты|contacts|рекомендации|хобби)(\s*[:\-]?)\s*$/i;
+
+const DEGREE_PATTERNS: Array<{ re: RegExp; level: EducationSpan["level"] }> = [
+  { re: /\b(бакалавр|bachelor)\b/i, level: "bachelor" },
+  { re: /\b(магистр|master)\b/i, level: "master" },
+  { re: /\b(специалист|specialist|диплом\s+специалиста)\b/i, level: "specialist" },
+  { re: /\b(кандидат\s+наук|phd|ph\.d|аспирант(ура)?|доктор\s+наук)\b/i, level: "phd" },
+  { re: /\b(колледж|техникум|училище|ссуз|college|среднее\s+проф)\b/i, level: "college" },
+  { re: /\b(школа|лицей|гимназия|school|высшее)\b/i, level: "school" },
+];
+
+function detectDegreeLevel(text: string): EducationSpan["level"] | undefined {
+  for (const { re, level } of DEGREE_PATTERNS) {
+    if (re.test(text)) return level;
+  }
+  return undefined;
+}
+
+function extractEduDateRange(line: string): { startISO: string | null; endISO: string | null; matched: string } | null {
+  // Сначала пробуем «2015 — 2020» или с датами
+  const dateRangeRe =
+    /(\d{4}|[а-яё]{3,}\.?\s+\d{4}|\d{1,2}[.\/]\d{4}|\d{4}-\d{1,2})\s*[-–—]\s*(\d{4}|[а-яё]{3,}\.?\s+\d{4}|\d{1,2}[.\/]\d{4}|\d{4}-\d{1,2}|по\s+наст\w*|настоящее\s+врем\w*|н\.в\.?|сейчас)/i;
+  const m = line.match(dateRangeRe);
+  if (m) {
+    const startISO = parseFlexibleDate(m[1], false);
+    const endISO = parseFlexibleDate(m[2], true);
+    return { startISO, endISO, matched: m[0] };
+  }
+  // «(2015-2020)» или просто пара лет «2015-2020»
+  const yearsRe = /(?:\(|\[|,|\s)(\d{4})\s*[-–—]\s*(\d{4})(?:\)|\]|,|\s|$)/;
+  const y = line.match(yearsRe);
+  if (y) {
+    const s = parseFlexibleDate(y[1], false);
+    const e = parseFlexibleDate(y[2], true);
+    return { startISO: s, endISO: e, matched: y[0] };
+  }
+  return null;
+}
+
+export function extractEducationFromText(resumeText: string): EducationSpan[] {
+  const result: EducationSpan[] = [];
+  if (!resumeText) return result;
+  const lines = resumeText.split(/\r?\n/);
+  // Находим начало секции «Образование»
+  let inSection = false;
+  let eduBlock: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const trimmed = raw.trim();
+    if (!inSection) {
+      if (EDU_SECTION_RE.test(trimmed)) {
+        inSection = true;
+        continue;
+      }
+      continue;
+    }
+    // Мы внутри секции. Проверяем выход.
+    if (EDU_END_RE.test(trimmed)) {
+      inSection = false;
+      break;
+    }
+    eduBlock.push(raw);
+  }
+
+  // Если нашли секцию — парсим её
+  if (eduBlock.length) {
+    result.push(...parseEduBlock(eduBlock));
+  } else {
+    // Фолбэк: ищем в любом месте строки с ВУЗ-ключевыми словами и датами
+    const uniRe = /(университет|институт|академия|university|institute|academy|МГУ|СПбГУ|МФТИ|МГТУ|ВШЭ|HSE|МГИМО|РАНХиГС|колледж|техникум|лицей|гимназия)/i;
+    for (let i = 0; i < lines.length; i++) {
+      if (!uniRe.test(lines[i])) continue;
+      const ctx = [lines[i - 1] || "", lines[i], lines[i + 1] || ""].join(" ");
+      const range = extractEduDateRange(ctx);
+      if (!range || !range.startISO) continue;
+      const institution = lines[i].replace(/[,•\-—].*/, "").trim().slice(0, 200);
+      if (!institution) continue;
+      result.push({
+        institution,
+        startISO: range.startISO,
+        endISO: range.endISO,
+        months: monthsBetween(range.startISO, range.endISO) ?? 0,
+        level: detectDegreeLevel(ctx),
+      });
+    }
+  }
+  return dedupeEducation(result);
+}
+
+function parseEduBlock(block: string[]): EducationSpan[] {
+  const out: EducationSpan[] = [];
+  // Группируем строки: каждая запись об образовании обычно 1–3 строки.
+  // Ищем строки с датами — это якорь записи.
+  for (let i = 0; i < block.length; i++) {
+    const line = block[i];
+    if (!line.trim()) continue;
+    const ctxLines = [block[i - 1] || "", line, block[i + 1] || "", block[i + 2] || ""];
+    const ctx = ctxLines.join(" ");
+    const range = extractEduDateRange(ctx);
+    if (!range || !range.startISO) continue;
+    // Ищем название ВУЗа — в текущей или соседних строках
+    const uniRe = /(университет|институт|академия|university|institute|academy|колледж|техникум|лицей|гимназия|школа|МГУ|СПбГУ|МФТИ|МГТУ|ВШЭ|HSE|МГИМО|РАНХиГС)/i;
+    let institution = "";
+    for (const cand of ctxLines) {
+      if (uniRe.test(cand)) {
+        institution = cand.replace(range.matched, "").replace(/^[\s,•\-—]+|[\s,•\-—]+$/g, "").trim();
+        break;
+      }
+    }
+    if (!institution) {
+      // Берём строку с датой, без диапазона
+      institution = line.replace(range.matched, "").replace(/^[\s,•\-—()]+|[\s,•\-—()]+$/g, "").trim();
+    }
+    if (!institution || institution.length < 3) continue;
+    institution = institution.slice(0, 200);
+
+    // Факультет / специальность — следующая строка
+    const fieldCandidate = (block[i + 1] || "").trim();
+    const field = fieldCandidate && !extractEduDateRange(fieldCandidate) ? fieldCandidate.slice(0, 200) : undefined;
+
+    out.push({
+      institution,
+      field,
+      startISO: range.startISO,
+      endISO: range.endISO,
+      months: monthsBetween(range.startISO, range.endISO) ?? 0,
+      level: detectDegreeLevel(ctx),
+    });
+    // Пропускаем следующую строку, чтобы не дублировать запись
+    if (field) i += 1;
+  }
+  return out;
+}
+
+function dedupeEducation(list: EducationSpan[]): EducationSpan[] {
+  const seen = new Set<string>();
+  const out: EducationSpan[] = [];
+  for (const e of list) {
+    const key = `${e.institution.toLowerCase()}|${e.startISO}|${e.endISO}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out;
 }
 
 export function formatMonths(m: number): string {
