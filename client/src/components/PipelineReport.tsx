@@ -3,7 +3,6 @@ import type {
   SingleStepReport,
   VerificationStatus,
   ResolutionCode,
-  CulturalValueKey,
   KeyFinding,
   LinguisticAudit,
   LinguisticAuditVerdict,
@@ -18,9 +17,6 @@ import {
   ShieldCheck,
   Gauge,
   Compass,
-  Handshake,
-  Rocket,
-  Users,
   FileText,
   Sparkles,
   TrendingUp,
@@ -73,7 +69,6 @@ function moduleLabel(mod: KeyFinding["module"]): string {
   switch (mod) {
     case "verification": return "Верификация";
     case "motivation": return "Мотивация";
-    case "culturalFit": return "Cultural Fit";
     case "loyalty": return "Лояльность";
   }
 }
@@ -127,12 +122,6 @@ function statusBadge(s: VerificationStatus): { text: string; className: string }
       return { text: "⬜ Не проверялось", className: "border-muted bg-muted/30 text-muted-foreground" };
   }
 }
-
-const VALUE_ICONS: Record<CulturalValueKey, any> = {
-  responsibility: ShieldCheck,
-  partnership: Handshake,
-  entrepreneurship: Rocket,
-};
 
 function scoreBar(score: number, total = 100): string {
   const pct = Math.max(0, Math.min(100, (score / total) * 100));
@@ -267,8 +256,8 @@ export function PipelineReport({ report }: { report: SingleStepReport }) {
         )}
       </Card>
 
-      {/* 4 модуля — сетка */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/* 3 модуля — сетка */}
+      <div className="grid gap-4 lg:grid-cols-3">
         {/* 1. Верификация */}
         <Card className="border-card-border bg-card p-5" data-testid="card-verification">
           <div className="flex items-center justify-between">
@@ -400,62 +389,7 @@ export function PipelineReport({ report }: { report: SingleStepReport }) {
           )}
         </Card>
 
-        {/* 3. Cultural Fit */}
-        <Card className="border-card-border bg-card p-5" data-testid="card-cultural-fit">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-fuchsia-400" />
-              <div className="font-semibold">Cultural Fit · 3 ценности</div>
-            </div>
-            <div className="font-mono text-lg font-bold tabular-nums text-fuchsia-300">
-              {report.culturalFit.totalScore}
-              <span className="text-xs text-muted-foreground">/15</span>
-            </div>
-          </div>
-          {report.culturalFit.summary && (
-            <p className="mt-2 text-sm text-muted-foreground">{report.culturalFit.summary}</p>
-          )}
-          <div className="mt-3 space-y-2">
-            {report.culturalFit.values.map((v) => {
-              const VIcon = VALUE_ICONS[v.key];
-              return (
-                <div
-                  key={v.key}
-                  className="rounded-md border border-card-border bg-background/40 p-3"
-                  data-testid={`value-${v.key}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <VIcon className="h-3.5 w-3.5 text-fuchsia-400" />
-                      <div className="text-sm font-semibold">{v.label}</div>
-                    </div>
-                    <div className="flex items-center gap-0.5">
-                      {[1, 2, 3, 4, 5].map((n) => (
-                        <span
-                          key={n}
-                          className={`h-2 w-4 rounded-sm ${
-                            n <= v.score ? "bg-fuchsia-500" : "bg-muted"
-                          }`}
-                        />
-                      ))}
-                      <span className="ml-1 font-mono text-xs tabular-nums">{v.score}/5</span>
-                    </div>
-                  </div>
-                  {v.evidence.length > 0 && (
-                    <ul className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
-                      {v.evidence.slice(0, 3).map((e, i) => (
-                        <li key={i} className="italic">«{e}»</li>
-                      ))}
-                    </ul>
-                  )}
-                  {v.note && <div className="mt-1 text-[11px] text-muted-foreground">{v.note}</div>}
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-
-        {/* 4. Лояльность */}
+        {/* 3. Лояльность */}
         <Card className="border-card-border bg-card p-5" data-testid="card-loyalty">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -586,7 +520,7 @@ export function PipelineReport({ report }: { report: SingleStepReport }) {
           Composite Score · формула
         </div>
         <div className="mt-2 font-mono text-xs text-muted-foreground">
-          CS = 0.30 · ({report.motivation.score}/100) + 0.35 · ({report.culturalFit.totalScore}/15) + 0.35 · ({report.loyalty.score}/100) = <span className="font-bold text-foreground">{report.compositeScore}</span>
+          CS = 0.40 · ({report.motivation.score}/100) + 0.60 · ({report.loyalty.score}/100) = <span className="font-bold text-foreground">{report.compositeScore}</span>
         </div>
       </Card>
 

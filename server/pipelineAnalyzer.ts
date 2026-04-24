@@ -9,9 +9,6 @@ import type {
   VerificationItem,
   VerificationStatus,
   MotivationAnalysis,
-  CulturalFitV3,
-  CulturalValueScore,
-  CulturalValueKey,
   LoyaltyScore,
   FinalResolution,
   ResolutionCode,
@@ -30,13 +27,13 @@ import type {
 // Методология и системный промпт
 // ==========================================================
 
-const SYSTEM_PROMPT = `Ты — единый AI-аналитик Службы Безопасности и HR. Твоя задача — за один проход провести четыре параллельных модуля анализа кандидата (верификация опыта, мотивация, культурное соответствие, индекс лояльности) и собрать СОГЛАСОВАННУЮ итоговую сводку для руководителя.
+const SYSTEM_PROMPT = `Ты — единый AI-аналитик Службы Безопасности и HR. Твоя задача — за один проход провести три параллельных модуля анализа кандидата (верификация опыта, мотивация, индекс лояльности) и собрать СОГЛАСОВАННУЮ итоговую сводку для руководителя.
 
 ⚠️ КРИТИЧЕСКИ ВАЖНО — ФОРМАТ ОТВЕТА:
 - Ты ОБЯЗАН вернуть JSON строго по предоставленной схеме.
 - НЕ ПРИДУМЫВАЙ свои поля и структуры. НЕ ПЕРЕИМЕНОВЫВАЙ ключи.
 - Используй ТОЛЬКО те ключи, которые указаны в секции «ТРЕБУЕМЫЙ JSON». Лишние ключи будут отброшены.
-- Обязательные корневые ключи ровно эти (и никаких других): candidateName, verification, motivation, culturalFit, loyalty, executiveSummary.
+- Обязательные корневые ключи ровно эти (и никаких других): candidateName, verification, motivation, loyalty, executiveSummary.
 - Запрещено заворачивать ответ в markdown-блоки (три обратных апострофа + json) или любые другие markdown-фрагменты. Первый символ ответа — "{", последний — "}".
 - Запрещены любые комментарии, пояснения, префиксы, суффиксы и «Я проанализировал...» до или после JSON.
 
@@ -65,13 +62,9 @@ const SYSTEM_PROMPT = `Ты — единый AI-аналитик Службы Б
 4а) ПРОВЕРКА КОМПАНИЙ — АБСОЛЮТНЫЙ ЗАПРЕТ: у тебя НЕТ доступа к интернету, единым реестрам (ЕГРЮЛ, rusprofile), сайтам компаний и СМИ.
    ЗАПРЕЩЕНО утверждать о компании: «не существует», «не зарегистрирована», «не работает», «ликвидирована», «фиктивная», «сайт не открывается», «домен не активен», «компания-пустышка», «ИНН не найден».
    Единственный допустимый статус при отсутствии данных о компании: «Информация не найдена» — с рекомендацией рекрутеру проверить самостоятельно. Такие утверждения ВСЕГДА удаляются программно.
-5) КАЛИБРОВКА ЦЕННОСТЕЙ (1–5): 1 — явные антиподы; 2 — слабо выражено; 3 — нейтрально/нет данных; 4 — хорошо видно; 5 — ярко и последовательно. Если данных нет — ставь 3 и явно укажи это в note.
-6) ТРИ ЦЕННОСТИ V3.0 (только эти, именно с этими key): responsibility, partnership, entrepreneurship.
-7) СОГЛАСОВАННОСТЬ ВЫВОДОВ — обязательна:
+5) СОГЛАСОВАННОСТЬ ВЫВОДОВ — обязательна:
    • Если у кандидата redFlags по мотивации, score мотивации НЕ может быть >70.
-   • Если attitudeToFormer="hostile" или "critical", оценка «Партнёрство» НЕ может быть выше 3.
    • Если sHistory < 40 (короткие контракты), в loyalty.flags обязан быть маркер о job-hopping.
-   • Если sLanguage > 70, в evidence ценностей должны быть позитивные цитаты, согласованные с языком.
    • Executive summary должен ОДНОЗНАЧНО следовать из модулей: не утверждай в headline «низкий риск», если у любого модуля score < 50.`;
 
 // ==========================================================
@@ -293,8 +286,8 @@ EXECUTIVE SUMMARY (СВОДКА ДЛЯ РУКОВОДИТЕЛЯ)
 Собери непротиворечивую сводку, которая ОДНОЗНАЧНО следует из модулей выше.
 • headline (1 предложение, до 150 символов): итог одной строкой («Сильный кандидат с риском по X», «Не рекомендован из-за Y», «Условно рекомендован — нужно проверить Z»).
 • paragraph (2–3 предложения): расширенный итог, упоминающий главный плюс, главный риск и рекомендуемое действие.
-• keyFindings (3–6 элементов): {type:"strength|risk|neutral", module:"verification|motivation|culturalFit|loyalty", text:"короткое наблюдение"}. Минимум 1 strength (если есть) и 1 risk (если есть).
-• consistency: {status:"ok|warning|conflict", notes:["..."]} — твоя самооценка согласованности модулей. Если ты дал высокий культурный score при враждебном отношении к бывшим — это conflict.
+• keyFindings (3–6 элементов): {type:"strength|risk|neutral", module:"verification|motivation|loyalty", text:"короткое наблюдение"}. Минимум 1 strength (если есть) и 1 risk (если есть).
+• consistency: {status:"ok|warning|conflict", notes:["..."]} — твоя самооценка согласованности модулей.
 
 ==============================
 ТРЕБУЕМЫЙ JSON (строго эта схема)
@@ -320,14 +313,6 @@ EXECUTIVE SUMMARY (СВОДКА ДЛЯ РУКОВОДИТЕЛЯ)
     "greenFlags": ["..."],
     "urgencyNote": "краткая интерпретация прессинга"
   },
-  "culturalFit": {
-    "summary": "1-2 предложения",
-    "values": [
-      { "key": "responsibility", "label": "Ответственность за результат", "score": 3, "evidence": ["цитата (резюме)"], "note": "опц." },
-      { "key": "partnership", "label": "Партнёрство", "score": 3, "evidence": ["..."], "note": "опц." },
-      { "key": "entrepreneurship", "label": "Дух предпринимательства", "score": 3, "evidence": ["..."], "note": "опц." }
-    ]
-  },
   "loyalty": {
     "sHistory": 0,
     "sRecruiter": 0,
@@ -339,7 +324,7 @@ EXECUTIVE SUMMARY (СВОДКА ДЛЯ РУКОВОДИТЕЛЯ)
     "headline": "1 предложение",
     "paragraph": "2-3 предложения",
     "keyFindings": [
-      {"type": "strength|risk|neutral", "module": "verification|motivation|culturalFit|loyalty", "text": "..."}
+      {"type": "strength|risk|neutral", "module": "verification|motivation|loyalty", "text": "..."}
     ],
     "consistency": {"status": "ok|warning|conflict", "notes": ["..."]}
   },
@@ -361,7 +346,7 @@ EXECUTIVE SUMMARY (СВОДКА ДЛЯ РУКОВОДИТЕЛЯ)
 ==============================
 ПРИМЕР ПРАВИЛЬНОГО ОТВЕТА (для другого кандидата, только для иллюстрации СТРУКТУРЫ)
 ==============================
-{"candidateName":"Иванов И.И.","verification":{"status":"partial","summary":"Опыт подтверждён частично: расхождение в должности.","blockingConflict":false,"etkAvailable":true,"items":[{"company":"ООО Пример","position":"Senior","declared":"2022-01 — present","etk":"2022-01 — present","status":"partial","note":"В ЭТК должность ‘Разработчик’, в резюме ‘Senior’."}]},"motivation":{"score":55,"summary":"Мотивация смешанная: есть рост, но и прессинг оффера.","declaredReason":"рост","recruiterReason":"growth","reasonConsistency":"match","redFlags":["прессинг оффера"],"greenFlags":["позитив о команде"],"urgencyNote":"есть оффер"},"culturalFit":{"summary":"Средний фит.","values":[{"key":"responsibility","label":"Ответственность за результат","score":4,"evidence":["довёл проект до прода (резюме)"],"note":""},{"key":"partnership","label":"Партнёрство","score":4,"evidence":["говорит «мы» о команде (резюме)"],"note":""},{"key":"entrepreneurship","label":"Дух предпринимательства","score":3,"evidence":[],"note":"свидетельств недостаточно"}]},"loyalty":{"sHistory":70,"sRecruiter":65,"sLanguage":75,"summary":"Стабильный кандидат.","flags":[]},"executiveSummary":{"headline":"Условно рекомендован — проверить должность.","paragraph":"Хорошая культурная совместимость и стабильность. Расхождение в должности требует верификации. Рекомендуется уточнить грейд на интервью.","keyFindings":[{"type":"strength","module":"culturalFit","text":"Командность и ответственность"},{"type":"risk","module":"verification","text":"Расхождение должности Senior vs Разработчик"}],"consistency":{"status":"ok","notes":[]}}}
+{"candidateName":"Иванов И.И.","verification":{"status":"partial","summary":"Опыт подтверждён частично: расхождение в должности.","blockingConflict":false,"etkAvailable":true,"items":[{"company":"ООО Пример","position":"Senior","declared":"2022-01 — present","etk":"2022-01 — present","status":"partial","note":"В ЭТК должность ‘Разработчик’, в резюме ‘Senior’."}]},"motivation":{"score":55,"summary":"Мотивация смешанная: есть рост, но и прессинг оффера.","declaredReason":"рост","recruiterReason":"growth","reasonConsistency":"match","redFlags":["прессинг оффера"],"greenFlags":["позитив о команде"],"urgencyNote":"есть оффер"},"loyalty":{"sHistory":70,"sRecruiter":65,"sLanguage":75,"summary":"Стабильный кандидат.","flags":[]},"executiveSummary":{"headline":"Условно рекомендован — проверить должность.","paragraph":"Стабильная трудовая история. Расхождение в должности требует верификации. Рекомендуется уточнить грейд на интервью.","keyFindings":[{"type":"strength","module":"loyalty","text":"Стабильная трудовая история"},{"type":"risk","module":"verification","text":"Расхождение должности Senior vs Разработчик"}],"consistency":{"status":"ok","notes":[]}}}
 
 ⚠️ НИЖЕ ТВОЙ ОТВЕТ ДОЛЖЕН ИМЕТЬ ТОЧНО ТАКУЮ ЖЕ СТРУКТУРУ КЛЮЧЕЙ (содержание иное — на основе данных выше).`;
 }
@@ -504,12 +489,6 @@ export function stripPhantomArray(arr: string[]): string[] {
 
 const VSTATUSES: VerificationStatus[] = ["confirmed", "partial", "conflict", "not_checked"];
 const CONSISTENCY = ["match", "partial", "mismatch"] as const;
-const VALUE_KEYS: CulturalValueKey[] = ["responsibility", "partnership", "entrepreneurship"];
-const VALUE_LABELS: Record<CulturalValueKey, string> = {
-  responsibility: "Ответственность за результат",
-  partnership: "Партнёрство",
-  entrepreneurship: "Дух предпринимательства",
-};
 
 function normalizeVerification(v: any, etkAvailable: boolean): VerificationResult {
   const items: VerificationItem[] = Array.isArray(v?.items)
@@ -603,35 +582,6 @@ function normalizeMotivation(
   };
 }
 
-function normalizeCultural(c: any, attitudeToFormer: AttitudeToFormer): CulturalFitV3 {
-  const raw: any[] = Array.isArray(c?.values) ? c.values : [];
-  const byKey = new Map<CulturalValueKey, any>();
-  for (const v of raw) {
-    if (VALUE_KEYS.includes(v?.key)) byKey.set(v.key, v);
-  }
-  const values: CulturalValueScore[] = VALUE_KEYS.map((k) => {
-    const v = byKey.get(k) || {};
-    let score = clamp15(v?.score, 3);
-    // Жёсткое правило: hostile/critical → partnership ≤ 3
-    if (k === "partnership" && (attitudeToFormer === "hostile" || attitudeToFormer === "critical") && score > 3) {
-      score = 3;
-    }
-    return {
-      key: k,
-      label: VALUE_LABELS[k],
-      score,
-      evidence: Array.isArray(v?.evidence) ? v.evidence.map(String).slice(0, 4) : [],
-      note: v?.note ? String(v.note).slice(0, 300) : undefined,
-    };
-  });
-  const total = values.reduce((s, v) => s + v.score, 0);
-  return {
-    values,
-    totalScore: total,
-    summary: String(c?.summary || "").slice(0, 600),
-  };
-}
-
 function normalizeLoyalty(l: any, timeline: TimelineMetrics | null): LoyaltyScore {
   let sH = clamp(l?.sHistory, 0, 100, 50);
   const sR = clamp(l?.sRecruiter, 0, 100, 50);
@@ -674,20 +624,18 @@ function normalizeLoyalty(l: any, timeline: TimelineMetrics | null): LoyaltyScor
 
 export function computeCompositeScore(
   motivation: number, // 0..100
-  culturalSum: number, // 3..15
   loyalty: number, // 0..100
 ): number {
   const cs =
-    0.3 * (motivation / 100) +
-    0.35 * (culturalSum / 15) +
-    0.35 * (loyalty / 100);
+    0.40 * (motivation / 100) +
+    0.60 * (loyalty / 100);
   return Math.max(0, Math.min(100, Math.round(cs * 100)));
 }
 
 function buildResolutionReason(
   compositeScore: number,
   verificationStatus: VerificationStatus,
-  modules: { motivation: MotivationAnalysis; culturalFit: CulturalFitV3; loyalty: LoyaltyScore },
+  modules: { motivation: MotivationAnalysis; loyalty: LoyaltyScore },
   blockingConflict: boolean,
 ): string {
   if (blockingConflict) {
@@ -697,13 +645,11 @@ function buildResolutionReason(
   // Сильные стороны
   const strongs: string[] = [];
   if (modules.motivation.score >= 70) strongs.push("здоровая мотивация");
-  if (modules.culturalFit.totalScore >= 12) strongs.push("высокое культурное соответствие");
   if (modules.loyalty.score >= 70) strongs.push("стабильность и лояльность");
   if (verificationStatus === "confirmed") strongs.push("опыт подтверждён ЭТК");
   // Слабые стороны
   const weaks: string[] = [];
   if (modules.motivation.score < 50) weaks.push("слабая мотивация");
-  if (modules.culturalFit.totalScore <= 7) weaks.push("низкое культурное соответствие");
   if (modules.loyalty.score < 50) weaks.push("риски лояльности");
   if (verificationStatus === "conflict") weaks.push("расхождения с ЭТК");
 
@@ -720,7 +666,6 @@ export function deriveResolution(
   etkAvailable: boolean,
   modules: {
     motivation: MotivationAnalysis;
-    culturalFit: CulturalFitV3;
     loyalty: LoyaltyScore;
   },
 ): FinalResolution {
@@ -728,10 +673,6 @@ export function deriveResolution(
   const conditionsSet = new Set<string>();
   if (modules.motivation.redFlags.length) {
     conditionsSet.add("Углубить вопросы о мотивации на следующем этапе интервью");
-  }
-  const weakValue = modules.culturalFit.values.find((v) => v.score <= 2);
-  if (weakValue) {
-    conditionsSet.add(`Отработать слабую ценность «${weakValue.label}» (оценка ${weakValue.score}/5)`);
   }
   if (modules.loyalty.sHistory < 50) {
     conditionsSet.add("Проверить причины коротких контрактов / частой смены работодателей");
@@ -815,7 +756,6 @@ function normalizeExecutiveSummary(
   modules: {
     verification: VerificationResult;
     motivation: MotivationAnalysis;
-    culturalFit: CulturalFitV3;
     loyalty: LoyaltyScore;
   },
   resolution: FinalResolution,
@@ -865,7 +805,7 @@ function normalizeExecutiveSummary(
 
   // KeyFindings: нормализуем + добавляем недостающие из модулей
   const TYPES = new Set(["strength", "risk", "neutral"]);
-  const MODS = new Set(["verification", "motivation", "culturalFit", "loyalty"]);
+  const MODS = new Set(["verification", "motivation", "loyalty"]);
   const rawFindings: KeyFinding[] = Array.isArray(raw?.keyFindings)
     ? raw.keyFindings
         .map((f: any) => ({
@@ -898,13 +838,6 @@ function normalizeExecutiveSummary(
   if (modules.motivation.redFlags.length > 0 && !hasFinding("red flag") && !hasFinding("риск мотивац")) {
     findings.push({ type: "risk", module: "motivation", text: `Риски мотивации: ${modules.motivation.redFlags[0]}.` });
   }
-  if (modules.culturalFit.totalScore >= 12 && !hasFinding("культурн")) {
-    findings.push({ type: "strength", module: "culturalFit", text: `Высокое культурное соответствие (${modules.culturalFit.totalScore}/15).` });
-  }
-  const weakValue = modules.culturalFit.values.find((v) => v.score <= 2);
-  if (weakValue && !hasFinding(weakValue.label)) {
-    findings.push({ type: "risk", module: "culturalFit", text: `Слабая ценность «${weakValue.label}» (${weakValue.score}/5).` });
-  }
   if (modules.loyalty.score >= 75 && !hasFinding("лояльн")) {
     findings.push({ type: "strength", module: "loyalty", text: `Стабильная трудовая история (ILS ${modules.loyalty.score}/100).` });
   }
@@ -923,13 +856,6 @@ function normalizeExecutiveSummary(
 
   // Авто-проверка согласованности (программная)
   const autoChecks: string[] = [];
-  if (
-    (recruiterForm.attitudeToFormer === "hostile" || recruiterForm.attitudeToFormer === "critical") &&
-    modules.culturalFit.values.find((v) => v.key === "partnership")!.score > 3
-  ) {
-    autoChecks.push("Высокая оценка «Партнёрства» при критическом отношении к бывшим — несогласованность.");
-    consistencyStatus = "conflict";
-  }
   if (modules.motivation.redFlags.length > 0 && modules.motivation.score > 70) {
     autoChecks.push("Высокий score мотивации при наличии red flags — несогласованность.");
     consistencyStatus = consistencyStatus === "conflict" ? "conflict" : "warning";
@@ -1025,12 +951,10 @@ export async function runPipelineAnalysis(
 
   const verification = normalizeVerification(parsed?.verification, etkAvailable);
   const motivation = normalizeMotivation(parsed?.motivation, form.searchReason, form.timePressure);
-  const culturalFit = normalizeCultural(parsed?.culturalFit, form.attitudeToFormer);
   const loyalty = normalizeLoyalty(parsed?.loyalty, timeline);
 
   const compositeScore = computeCompositeScore(
     motivation.score,
-    culturalFit.totalScore,
     loyalty.score,
   );
 
@@ -1039,12 +963,12 @@ export async function runPipelineAnalysis(
     verification.status,
     verification.blockingConflict,
     etkAvailable,
-    { motivation, culturalFit, loyalty },
+    { motivation, loyalty },
   );
 
   const executiveSummary = normalizeExecutiveSummary(
     parsed?.executiveSummary,
-    { verification, motivation, culturalFit, loyalty },
+    { verification, motivation, loyalty },
     resolution,
     form,
   );
@@ -1052,14 +976,13 @@ export async function runPipelineAnalysis(
   const linguisticAudit = mergeLinguisticAudit(linguisticBase, parsed?.linguistic);
 
   return {
-    version: "3.5",
+    version: "3.6",
     candidateName,
     createdAt: Date.now(),
     recruiterForm: form,
     etk,
     verification,
     motivation,
-    culturalFit,
     loyalty,
     linguisticAudit,
     compositeScore,

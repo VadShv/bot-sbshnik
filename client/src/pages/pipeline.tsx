@@ -158,9 +158,8 @@ function PipelineRunner({
   const [progress, setProgress] = useState<{
     verification: "idle" | "running" | "done";
     motivation: "idle" | "running" | "done";
-    culturalFit: "idle" | "running" | "done";
     loyalty: "idle" | "running" | "done";
-  }>({ verification: "idle", motivation: "idle", culturalFit: "idle", loyalty: "idle" });
+  }>({ verification: "idle", motivation: "idle", loyalty: "idle" });
 
   // Предзаполнение резюме из исходной проверки, если пришли с ?fromCheck=
   const parentQuery = useQuery<{
@@ -248,7 +247,7 @@ function PipelineRunner({
   const runMut = useMutation({
     mutationFn: async () => {
       // Включаем «прогресс» — последовательно помечаем модули как running/done
-      setProgress({ verification: "running", motivation: "running", culturalFit: "running", loyalty: "running" });
+      setProgress({ verification: "running", motivation: "running", loyalty: "running" });
       const res = await apiRequest("POST", "/api/pipeline/analyze", {
         resumeText: slots.resume.text,
         etk: etkStructured,
@@ -263,7 +262,7 @@ function PipelineRunner({
       setReport(d.report);
       setReportId(d.id);
       setSavedPipelineId(d.id);
-      setProgress({ verification: "done", motivation: "done", culturalFit: "done", loyalty: "done" });
+      setProgress({ verification: "done", motivation: "done", loyalty: "done" });
       toast({ title: "Пайплайн завершён", description: `Итог: ${d.report.resolution.label}` });
       // Прокрутка к отчёту
       setTimeout(() => {
@@ -271,7 +270,7 @@ function PipelineRunner({
       }, 50);
     },
     onError: (e: any) => {
-      setProgress({ verification: "idle", motivation: "idle", culturalFit: "idle", loyalty: "idle" });
+      setProgress({ verification: "idle", motivation: "idle", loyalty: "idle" });
       toast({
         title: "Ошибка пайплайна",
         description: (e?.message || "").replace(/^\d+:\s*/, "").slice(0, 240),
@@ -399,7 +398,7 @@ function PipelineRunner({
             Полный AI-скрининг кандидата за один проход
           </h1>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Один экран, один клик — финальная резолюция. Четыре модуля (верификация опыта, мотивация, Cultural Fit, лояльность и стабильность) анализируются параллельно, результат сводится в Composite Score и матрицу из пяти решений.
+            Один экран, один клик — финальная резолюция. Три модуля (верификация опыта, мотивация, лояльность и стабильность) анализируются параллельно, результат сводится в Composite Score и матрицу из пяти решений.
           </p>
         </div>
 
@@ -408,12 +407,15 @@ function PipelineRunner({
           {SLOTS.map((s) => {
             const state = slots[s.key];
             const Icon = s.icon;
+            // v3.6: резюме read-only, если пайплайн запущен из базовой проверки.
+            // Загружать файл резюме нельзя — оно уже взято из карточки проверки.
+            const resumeLocked = s.key === "resume" && Boolean(parentCheckId);
             return (
               <Card
                 key={s.key}
                 className={`border-card-border bg-card p-4 ${
                   state.fileName ? "border-primary/50" : ""
-                }`}
+                } ${resumeLocked ? "opacity-95" : ""}`}
                 data-testid={`slot-${s.key}`}
               >
                 <div className="flex items-center justify-between">
@@ -421,13 +423,26 @@ function PipelineRunner({
                     <Icon className="h-4 w-4 text-primary" />
                     <div className="text-sm font-semibold">{s.title}</div>
                   </div>
-                  {s.required && (
-                    <span className="font-mono text-[10px] uppercase tracking-widest text-red-400">
-                      обязат.
+                  {resumeLocked ? (
+                    <span
+                      className="font-mono text-[10px] uppercase tracking-widest text-primary"
+                      data-testid={`badge-from-base-check-${s.key}`}
+                    >
+                      из базовой проверки
                     </span>
+                  ) : (
+                    s.required && (
+                      <span className="font-mono text-[10px] uppercase tracking-widest text-red-400">
+                        обязат.
+                      </span>
+                    )
                   )}
                 </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">{s.desc}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {resumeLocked
+                    ? "Резюме автоматически взято из исходной проверки и не редактируется."
+                    : s.desc}
+                </p>
 
                 <input
                   ref={fileInputs[s.key]}
@@ -446,7 +461,7 @@ function PipelineRunner({
                   size="sm"
                   className="mt-3 w-full"
                   onClick={() => fileInputs[s.key].current?.click()}
-                  disabled={state.loading || running}
+                  disabled={state.loading || running || resumeLocked}
                   data-testid={`button-upload-${s.key}`}
                 >
                   {state.loading ? (
@@ -454,7 +469,11 @@ function PipelineRunner({
                   ) : (
                     <Upload className="mr-2 h-3.5 w-3.5" />
                   )}
-                  {state.fileName ? "Заменить файл" : "Загрузить"}
+                  {resumeLocked
+                    ? "Загрузка недоступна"
+                    : state.fileName
+                    ? "Заменить файл"
+                    : "Загрузить"}
                 </Button>
 
                 {state.fileName && (
@@ -474,17 +493,45 @@ function PipelineRunner({
 
         {/* Текст резюме (можно без файла) */}
         <Card className="mt-5 border-card-border bg-card p-5">
-          <Label className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-            Резюме (текст) — можно вставить вручную
-          </Label>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Label className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              {parentCheckId
+                ? "Резюме (текст) — read-only"
+                : "Резюме (текст) — можно вставить вручную"}
+            </Label>
+            {parentCheckId && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-primary"
+                data-testid="badge-resume-from-base"
+              >
+                <FileSearch className="h-3 w-3" />
+                из базовой проверки
+              </span>
+            )}
+          </div>
           <Textarea
-            className="mt-2 min-h-[160px] resize-y font-mono text-xs"
+            className={`mt-2 min-h-[160px] resize-y font-mono text-xs ${
+              parentCheckId ? "bg-background/60 text-muted-foreground" : ""
+            }`}
             value={slots.resume.text}
-            onChange={(e) => patchSlot("resume", { text: e.target.value })}
-            placeholder="Если не загружали файл — вставьте текст резюме сюда. Минимум 100 символов."
+            onChange={(e) => {
+              if (parentCheckId) return;
+              patchSlot("resume", { text: e.target.value });
+            }}
+            placeholder={
+              parentCheckId
+                ? "Резюме взято из исходной проверки и не редактируется."
+                : "Если не загружали файл — вставьте текст резюме сюда. Минимум 100 символов."
+            }
             data-testid="textarea-resume"
             disabled={running}
+            readOnly={Boolean(parentCheckId)}
           />
+          {parentCheckId && (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Чтобы изменить резюме — перезапустите базовую проверку с новым файлом и заново откройте «Пайплайн».
+            </p>
+          )}
         </Card>
 
         {/* Форма рекрутера */}
@@ -598,7 +645,6 @@ function PipelineRunner({
             {[
               { key: "verification", label: "Верификация опыта" },
               { key: "motivation", label: "Мотивация" },
-              { key: "culturalFit", label: "Cultural Fit" },
               { key: "loyalty", label: "Лояльность (ILS)" },
             ].map((m) => {
               const st = progress[m.key as keyof typeof progress];

@@ -673,24 +673,7 @@ export type MotivationAnalysis = {
   urgencyNote?: string;             // интерпретация временного прессинга
 };
 
-// --- Модуль 3: Cultural Fit V3 (3 объединённые ценности) ---
-export type CulturalValueKey = "responsibility" | "partnership" | "entrepreneurship";
-
-export type CulturalValueScore = {
-  key: CulturalValueKey;
-  label: string;                    // «Ответственность за результат» и т.д.
-  score: 1 | 2 | 3 | 4 | 5;
-  evidence: string[];               // дословные цитаты / наблюдения
-  note?: string;
-};
-
-export type CulturalFitV3 = {
-  values: CulturalValueScore[];     // ровно 3
-  totalScore: number;               // 3-15
-  summary: string;
-};
-
-// --- Модуль 4: Индекс лояльности и стабильности (ILS) ---
+// --- Модуль 3: Индекс лояльности и стабильности (ILS) ---
 export type LoyaltyScore = {
   score: number;                    // 0–100
   sHistory: number;                 // 0–100 (стабильность по хронологии)
@@ -719,7 +702,7 @@ export type FinalResolution = {
 // --- Сводка для руководителя (executive summary) ---
 export type KeyFinding = {
   type: "strength" | "risk" | "neutral";
-  module: "verification" | "motivation" | "culturalFit" | "loyalty";
+  module: "verification" | "motivation" | "loyalty";
   text: string;
 };
 
@@ -896,14 +879,13 @@ export type LinguisticAudit = {
 
 // --- Итоговый отчёт пайплайна ---
 export type SingleStepReport = {
-  version: "3.5";
+  version: "3.6";
   candidateName: string | null;
   createdAt: number;
   recruiterForm: RecruiterForm;
   etk: EtkStructured;
   verification: VerificationResult;
   motivation: MotivationAnalysis;
-  culturalFit: CulturalFitV3;
   loyalty: LoyaltyScore;
   linguisticAudit?: LinguisticAudit;     // новый 4-й слой
   compositeScore: number;
