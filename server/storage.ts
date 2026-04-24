@@ -1,4 +1,4 @@
-import { checks, pipelineChecks, chatMessages } from "@shared/schema";
+import { checks, pipelineChecks, chatMessages, teamFitReports } from "@shared/schema";
 import type {
   Check,
   InsertCheck,
@@ -6,6 +6,8 @@ import type {
   InsertPipelineCheck,
   ChatMessage,
   InsertChatMessage,
+  InsertTeamFitReport,
+  TeamFitReportRow,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
@@ -63,6 +65,23 @@ sqlite.exec(`
     content TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_chat_parent ON chat_messages(parent_check_id, created_at ASC);
+  CREATE TABLE IF NOT EXISTS team_fit_reports (
+    id TEXT PRIMARY KEY,
+    check_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    ocean TEXT NOT NULL,
+    mbti_cluster TEXT NOT NULL,
+    mbti_reasoning TEXT NOT NULL,
+    value_fit TEXT NOT NULL,
+    vendor_fit TEXT NOT NULL,
+    product_fit TEXT NOT NULL,
+    methodology_fit TEXT NOT NULL,
+    behavioral_profile TEXT NOT NULL,
+    hypotheses TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    data_insufficient INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_team_fit_check ON team_fit_reports(check_id);
 `);
 
 export const db = drizzle(sqlite);
@@ -84,6 +103,10 @@ export interface IStorage {
   appendChatMessage(msg: InsertChatMessage): Promise<ChatMessage>;
   listChatMessages(parentCheckId: string, limit?: number): Promise<ChatMessage[]>;
   deleteChatByParent(parentCheckId: string): Promise<void>;
+  // Team Fit v3.4
+  createTeamFitReport(row: InsertTeamFitReport): Promise<TeamFitReportRow>;
+  getTeamFitReportByCheckId(checkId: string): Promise<TeamFitReportRow | undefined>;
+  deleteTeamFitReport(checkId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -148,6 +171,22 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteChatByParent(parentCheckId: string): Promise<void> {
     db.delete(chatMessages).where(eq(chatMessages.parentCheckId, parentCheckId)).run();
+  }
+  async createTeamFitReport(row: InsertTeamFitReport): Promise<TeamFitReportRow> {
+    // Удаляем предыдущий отчёт по этой проверке, если был — храним один актуальный
+    db.delete(teamFitReports).where(eq(teamFitReports.checkId, row.checkId)).run();
+    return db.insert(teamFitReports).values(row).returning().get();
+  }
+  async getTeamFitReportByCheckId(checkId: string): Promise<TeamFitReportRow | undefined> {
+    return db
+      .select()
+      .from(teamFitReports)
+      .where(eq(teamFitReports.checkId, checkId))
+      .orderBy(desc(teamFitReports.createdAt))
+      .get();
+  }
+  async deleteTeamFitReport(checkId: string): Promise<void> {
+    db.delete(teamFitReports).where(eq(teamFitReports.checkId, checkId)).run();
   }
 }
 

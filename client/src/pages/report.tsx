@@ -10,6 +10,7 @@ import { ScoreGauge } from "@/components/ScoreGauge";
 import { FindingCard } from "@/components/FindingCard";
 import { WolfReport } from "@/components/WolfReport";
 import { ChatTab } from "@/components/ChatTab";
+import { TeamFitTab } from "@/components/TeamFitTab";
 import {
   ArrowLeft,
   Download,
@@ -30,6 +31,7 @@ import {
   Workflow,
   ChevronRight,
   ChevronDown,
+  Sparkles,
 } from "lucide-react";
 import type { FullReport, RecruiterAction, RedFlag, PipelineSummary } from "@/lib/types";
 import { useMemo, useState } from "react";
@@ -162,10 +164,14 @@ export default function ReportPage() {
 
         {/* ============ 3 ВКЛАДКИ v3.3 ============ */}
         <Tabs defaultValue="base" className="mb-4 print:hidden">
-          <TabsList className="grid w-full grid-cols-3 md:w-auto md:inline-grid">
+          <TabsList className="grid w-full grid-cols-2 md:w-auto md:inline-grid md:grid-cols-4">
             <TabsTrigger value="base" data-testid="tab-base">
               <ShieldAlert className="mr-1.5 h-3.5 w-3.5" />
               Базовая проверка
+            </TabsTrigger>
+            <TabsTrigger value="teamfit" data-testid="tab-teamfit">
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              Team Fit
             </TabsTrigger>
             <TabsTrigger value="pipeline" data-testid="tab-pipeline">
               <Workflow className="mr-1.5 h-3.5 w-3.5" />
@@ -181,6 +187,11 @@ export default function ReportPage() {
               ИИ-ассистент
             </TabsTrigger>
           </TabsList>
+
+          {/* ============ TAB: TEAM FIT ============ */}
+          <TabsContent value="teamfit" className="mt-6">
+            <TeamFitTab checkId={data.id} />
+          </TabsContent>
 
           {/* ============ TAB 2: ПАЙПЛАЙН (встроенный интерфейс) ============ */}
           <TabsContent value="pipeline" className="mt-6">

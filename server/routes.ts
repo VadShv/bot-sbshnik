@@ -6,7 +6,15 @@ import { storage } from "./storage";
 import { runDetectors, aggregateCategoryScore } from "./detectors";
 import { yandexAnalyze, yandexComplete } from "./yandex";
 import { runWolfAudit } from "./wolfDetector";
+import { runFitGuard } from "./fitGuard";
 import { stripPhantomText } from "./pipelineAnalyzer";
+import type {
+  TeamFitReport,
+  OceanScores,
+  MbtiCluster,
+  FitAxis,
+  InterviewHypothesis,
+} from "@shared/schema";
 import type {
   Finding,
   FullReport,
@@ -782,6 +790,90 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.delete("/api/checks/:id/chat", async (req, res) => {
     try {
       await storage.deleteChatByParent(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // =====================================================================
+  // Team Fit / Fit Guard v3 (v3.4)
+  // =====================================================================
+
+  // Хелпер десериализации строки из БД в TeamFitReport
+  function rowToTeamFitReport(row: any): TeamFitReport {
+    const safeParse = <T,>(s: string, fallback: T): T => {
+      try { return JSON.parse(s); } catch { return fallback; }
+    };
+    return {
+      id: row.id,
+      checkId: row.checkId,
+      createdAt: row.createdAt,
+      ocean: safeParse<OceanScores>(row.ocean, {
+        O: 5, C: 5, E: 5, A: 5, N: 5,
+        rationale: { O: "", C: "", E: "", A: "", N: "" },
+      }),
+      mbtiCluster: (row.mbtiCluster || "none") as MbtiCluster,
+      mbtiReasoning: row.mbtiReasoning || "",
+      valueFit: safeParse<FitAxis>(row.valueFit, { status: "не выявлен", evidence: [], note: "" }),
+      vendorFit: safeParse<FitAxis>(row.vendorFit, { status: "не выявлен", evidence: [], note: "" }),
+      productFit: safeParse<FitAxis>(row.productFit, { status: "не выявлен", evidence: [], note: "" }),
+      methodologyFit: safeParse<FitAxis>(row.methodologyFit, { status: "не выявлен", evidence: [], note: "" }),
+      behavioralProfile: safeParse<string[]>(row.behavioralProfile, []),
+      hypotheses: safeParse<InterviewHypothesis[]>(row.hypotheses, []),
+      summary: row.summary || "",
+      dataInsufficient: Boolean(row.dataInsufficient),
+    };
+  }
+
+  // GET — вернуть сохранённый отчёт Team Fit по id проверки (или null, если ещё не создан)
+  app.get("/api/checks/:id/team-fit", async (req, res) => {
+    try {
+      const row = await storage.getTeamFitReportByCheckId(req.params.id);
+      if (!row) { res.json(null); return; }
+      res.json(rowToTeamFitReport(row));
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // POST — запустить анализ Fit Guard v3, сохранить и вернуть отчёт
+  app.post("/api/checks/:id/team-fit", async (req, res) => {
+    try {
+      const checkId = req.params.id;
+      const check = await storage.getCheck(checkId);
+      if (!check) {
+        res.status(404).json({ message: "Проверка не найдена" });
+        return;
+      }
+      const analysis = await runFitGuard(check.resumeText);
+      const saved = await storage.createTeamFitReport({
+        id: nanoid(),
+        checkId,
+        createdAt: Date.now(),
+        ocean: JSON.stringify(analysis.ocean),
+        mbtiCluster: analysis.mbtiCluster,
+        mbtiReasoning: analysis.mbtiReasoning,
+        valueFit: JSON.stringify(analysis.valueFit),
+        vendorFit: JSON.stringify(analysis.vendorFit),
+        productFit: JSON.stringify(analysis.productFit),
+        methodologyFit: JSON.stringify(analysis.methodologyFit),
+        behavioralProfile: JSON.stringify(analysis.behavioralProfile),
+        hypotheses: JSON.stringify(analysis.hypotheses),
+        summary: analysis.summary,
+        dataInsufficient: analysis.dataInsufficient,
+      });
+      res.json(rowToTeamFitReport(saved));
+    } catch (e: any) {
+      console.error("Team Fit analysis error:", e);
+      res.status(500).json({ message: e?.message || "Ошибка анализа Team Fit" });
+    }
+  });
+
+  // DELETE — удалить отчёт Team Fit для проверки
+  app.delete("/api/checks/:id/team-fit", async (req, res) => {
+    try {
+      await storage.deleteTeamFitReport(req.params.id);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: e.message });

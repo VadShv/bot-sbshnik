@@ -69,6 +69,13 @@ export type {
   AcidAnalysis,
   LinguisticAuditVerdict,
   LinguisticAudit,
+  // Team Fit / Fit Guard v3 (v3.4)
+  TeamFitReport,
+  OceanScores,
+  MbtiCluster,
+  FitAxis,
+  FitAxisStatus,
+  InterviewHypothesis,
 } from "@shared/schema";
 
 export type CheckListItem = {

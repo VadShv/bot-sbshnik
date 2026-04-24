@@ -1052,7 +1052,7 @@ export async function runPipelineAnalysis(
   const linguisticAudit = mergeLinguisticAudit(linguisticBase, parsed?.linguistic);
 
   return {
-    version: "3.3",
+    version: "3.4",
     candidateName,
     createdAt: Date.now(),
     recruiterForm: form,

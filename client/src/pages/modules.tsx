@@ -10,6 +10,11 @@ import {
   Search,
   CheckCircle2,
   Info,
+  Sparkles,
+  Brain,
+  Building2,
+  Package,
+  Workflow,
 } from "lucide-react";
 
 export default function ModulesPage() {
@@ -28,6 +33,87 @@ export default function ModulesPage() {
           специализированные модули — подключаются к базовой проверке и
           расширяют её результат.
         </p>
+
+        {/* ============ FIT GUARD v3 (Team Fit) ============ */}
+        <Card
+          className="mb-6 border-primary/30 bg-primary/[0.04] p-6"
+          data-testid="module-fit-guard"
+        >
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="rounded-md bg-primary/15 p-2 text-primary">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-lg font-semibold">Fit Guard</div>
+                <span className="rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-primary">
+                  v3
+                </span>
+                <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-emerald-400">
+                  включён по умолчанию
+                </span>
+              </div>
+              <div className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                Team Fit · психо-поведенческая гипотеза по 5 осям
+              </div>
+            </div>
+          </div>
+
+          <p className="mb-5 text-sm leading-relaxed text-muted-foreground">
+            Модуль строит гипотезы о культурном, продуктовом и психо-поведенческом
+            соответствии кандидата команде на основе текста резюме. Результат —
+            рамка для интервью, не диагноз и не основание для отказа. Выводы помечаются
+            как гипотезы с опорой на резюме и проверочными вопросами.
+          </p>
+
+          <div className="mb-5 rounded-md border border-border bg-background/60 p-4">
+            <div className="mb-3 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              5 осей Team Fit
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              <AxisRow
+                icon={<Users className="h-3.5 w-3.5" />}
+                title="[1] Ценностный фит"
+                desc="Ответственность, командность, наставничество, прозрачность, отношение к ошибкам."
+              />
+              <AxisRow
+                icon={<Building2 className="h-3.5 w-3.5" />}
+                title="[2] Вендорный фит (РФ ПО)"
+                desc="1С, Галактика, Контур, Яндекс.Облако, Astra Linux, Postgres Pro, Naumen, Directum, Тарантул и др."
+              />
+              <AxisRow
+                icon={<Package className="h-3.5 w-3.5" />}
+                title="[3] Продуктовый фит"
+                desc="Retention/LTV/CAC, discovery/delivery, гипотезы, A/B, customer development, OKR по продукту."
+              />
+              <AxisRow
+                icon={<Workflow className="h-3.5 w-3.5" />}
+                title="[4] Методологический фит"
+                desc="Agile/Scrum/Kanban/SAFe: роли PO/SM, артефакты (беклог, спринт, ретро), waterfall/PMBOK."
+              />
+              <AxisRow
+                icon={<Brain className="h-3.5 w-3.5" />}
+                title="[5] Психотип-Аналитик"
+                desc="OCEAN (Big Five) баллы 0–10 и MBTI NT-кластер (INTJ / INTP / ENTJ / ENTP) — гипотеза когнитивного стиля."
+              />
+            </div>
+          </div>
+
+          <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-[11px] text-amber-300/90">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              Гарды: если резюме короче 300 слов — модуль сообщает о недостатке данных.
+              Ни один вывод не должен быть единственным основанием для отказа кандидату.
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+            <span>
+              Вывод строится как гипотезы для интервью (3–5 формулировок с проверочными вопросами).
+            </span>
+          </div>
+        </Card>
 
         {/* ============ WOLF DETECTOR v1.0 ============ */}
         <Card
@@ -244,6 +330,28 @@ function ArchetypeRow({ title, desc }: { title: string; desc: string }) {
     <div className="rounded border border-border/60 bg-muted/30 p-3">
       <div className="text-sm font-medium text-foreground">{title}</div>
       <div className="mt-0.5 text-xs text-muted-foreground">{desc}</div>
+    </div>
+  );
+}
+
+function AxisRow({
+  icon,
+  title,
+  desc,
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <div className="rounded border border-border/60 bg-muted/30 p-3">
+      <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+        {icon ? <span className="text-primary">{icon}</span> : null}
+        {title}
+      </div>
+      <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+        {desc}
+      </div>
     </div>
   );
 }

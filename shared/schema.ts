@@ -34,6 +34,86 @@ export const insertChatMessageSchema = createInsertSchema(chatMessages);
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 
+// --- Team Fit / Fit Guard v3 (v3.4) ---
+// Модуль психо-поведенческой и ценностной гипотезы на основе резюме.
+// ВАЖНО: все результаты — гипотезы для верификации на интервью,
+// не диагноз и не основание для отказа.
+export const teamFitReports = sqliteTable("team_fit_reports", {
+  id: text("id").primaryKey(),
+  checkId: text("check_id").notNull(),      // checks.id
+  createdAt: integer("created_at").notNull(),
+
+  // OCEAN (Big Five): 5 осей, 0..10 каждая
+  // JSON: { O: number, C: number, E: number, A: number, N: number,
+  //         rationale: { O: string, C: string, E: string, A: string, N: string } }
+  ocean: text("ocean").notNull(),
+
+  // MBTI NT-кластер гипотеза: INTJ | INTP | ENTJ | ENTP | none
+  mbtiCluster: text("mbti_cluster").notNull(),
+  mbtiReasoning: text("mbti_reasoning").notNull(),
+
+  // 4 фит-оси: JSON { status: "выявлен"|"частично"|"не выявлен", evidence: string[], note: string }
+  valueFit: text("value_fit").notNull(),
+  vendorFit: text("vendor_fit").notNull(),
+  productFit: text("product_fit").notNull(),
+  methodologyFit: text("methodology_fit").notNull(),
+
+  // Поведенческий профиль: JSON string[] (5 буллетов)
+  behavioralProfile: text("behavioral_profile").notNull(),
+
+  // Гипотезы для интервью: JSON Array<{ hypothesis: string, rationale: string, questions: string[] }>
+  hypotheses: text("hypotheses").notNull(),
+
+  // Итоговое резюме по модулю
+  summary: text("summary").notNull(),
+
+  // Флаг: недостаточно данных для психотипирования (резюме < 300 слов и т.п.)
+  dataInsufficient: integer("data_insufficient", { mode: "boolean" }).notNull(),
+});
+
+export const insertTeamFitReportSchema = createInsertSchema(teamFitReports);
+export type InsertTeamFitReport = z.infer<typeof insertTeamFitReportSchema>;
+export type TeamFitReportRow = typeof teamFitReports.$inferSelect;
+
+// Типы полезной нагрузки (для фронта и анализа)
+export type FitAxisStatus = "выявлен" | "частично" | "не выявлен";
+
+export type FitAxis = {
+  status: FitAxisStatus;
+  evidence: string[];   // цитаты/наблюдения из резюме
+  note: string;         // 1–2 предложения пояснения
+};
+
+export type OceanScores = {
+  O: number; C: number; E: number; A: number; N: number;
+  rationale: { O: string; C: string; E: string; A: string; N: string };
+};
+
+export type MbtiCluster = "INTJ" | "INTP" | "ENTJ" | "ENTP" | "none";
+
+export type InterviewHypothesis = {
+  hypothesis: string;
+  rationale: string;
+  questions: string[];  // 2 проверочных вопроса
+};
+
+export type TeamFitReport = {
+  id: string;
+  checkId: string;
+  createdAt: number;
+  ocean: OceanScores;
+  mbtiCluster: MbtiCluster;
+  mbtiReasoning: string;
+  valueFit: FitAxis;
+  vendorFit: FitAxis;
+  productFit: FitAxis;
+  methodologyFit: FitAxis;
+  behavioralProfile: string[];
+  hypotheses: InterviewHypothesis[];
+  summary: string;
+  dataInsufficient: boolean;
+};
+
 // --- Типы отчёта ---
 export type Severity = "low" | "medium" | "high" | "critical";
 
@@ -683,7 +763,7 @@ export type LinguisticAudit = {
 
 // --- Итоговый отчёт пайплайна ---
 export type SingleStepReport = {
-  version: "3.3";
+  version: "3.4";
   candidateName: string | null;
   createdAt: number;
   recruiterForm: RecruiterForm;
