@@ -7,6 +7,7 @@ export function Header() {
   const nav: { href: string; label: string }[] = [
     { href: "/", label: "Новая проверка" },
     { href: "/history", label: "История" },
+    { href: "/modules", label: "Модули" },
     { href: "/about", label: "Методика" },
   ];
   return (

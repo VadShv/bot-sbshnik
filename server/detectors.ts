@@ -123,7 +123,8 @@ function findingsChronology(text: string, now: Date): Finding[] {
     }
   }
 
-  // Пересечения периодов (>1 месяца)
+  // Пересечения периодов: показываем только если пересечение строго больше 2 месяцев (~60 дн.).
+  // Параллельная работа в пределах месяца (стык старого/нового места, стажировка, notice period) нормальна.
   const sorted = [...periods].sort((a, b) => a.start.getTime() - b.start.getTime());
   for (let i = 0; i < sorted.length - 1; i++) {
     for (let j = i + 1; j < sorted.length; j++) {
@@ -131,7 +132,7 @@ function findingsChronology(text: string, now: Date): Finding[] {
       const aEnd = endOf(a, now);
       const overlap = Math.min(aEnd.getTime(), endOf(b, now).getTime()) - b.start.getTime();
       const days = overlap / (1000 * 60 * 60 * 24);
-      if (days > 45) {
+      if (days > 60) {
         findings.push({
           id: "overlap",
           title: "Пересечение периодов занятости",

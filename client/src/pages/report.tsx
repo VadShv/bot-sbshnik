@@ -28,9 +28,10 @@ import {
   ShieldCheck,
   Workflow,
   ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import type { FullReport, RecruiterAction, RedFlag, PipelineSummary } from "@/lib/types";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 
 export default function ReportPage() {
@@ -260,32 +261,30 @@ export default function ReportPage() {
           <TabsContent value="base" className="mt-6">
         {/* Red flags — топ-критичные сигналы */}
         {r.redFlags && r.redFlags.length > 0 && (
-          <Card className="mb-6 border-red-500/30 bg-red-500/5 p-5">
-            <div className="mb-3 flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-400" />
-              <div className="font-semibold text-red-400">Красные флаги</div>
-              <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                топ-{r.redFlags.length} критичных сигналов
-              </div>
-            </div>
+          <CollapsibleSection
+            defaultOpen
+            tone="danger"
+            icon={<AlertTriangle className="h-4 w-4 text-red-400" />}
+            title={<span className="font-semibold text-red-400">Красные флаги</span>}
+            meta={`топ-${r.redFlags.length} критичных сигналов`}
+            dataTestId="block-red-flags"
+          >
             <ul className="space-y-2">
               {r.redFlags.map((rf, i) => (
                 <RedFlagRow key={i} rf={rf} />
               ))}
             </ul>
-          </Card>
+          </CollapsibleSection>
         )}
 
         {/* Positive signals */}
         {r.positiveSignals && r.positiveSignals.length > 0 && (
-          <Card className="mb-6 border-card-border bg-card p-5">
-            <div className="mb-3 flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-green-400" />
-              <div className="font-semibold">Положительные сигналы</div>
-              <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                что говорит в пользу
-              </div>
-            </div>
+          <CollapsibleSection
+            icon={<CheckCircle2 className="h-4 w-4 text-green-400" />}
+            title="Положительные сигналы"
+            meta="что говорит в пользу"
+            dataTestId="block-positive"
+          >
             <ul className="grid gap-2 md:grid-cols-2">
               {r.positiveSignals.map((s, i) => (
                 <li key={i} className="flex items-start gap-2 text-sm text-foreground">
@@ -294,11 +293,19 @@ export default function ReportPage() {
                 </li>
               ))}
             </ul>
-          </Card>
+          </CollapsibleSection>
         )}
 
         {/* Три интегральные категории */}
-        <div className="mb-6 grid gap-4 md:grid-cols-3">
+        <CollapsibleSection
+          defaultOpen
+          icon={<Target className="h-4 w-4 text-primary" />}
+          title="Скоры по категориям"
+          meta="риски · накрутка · волки"
+          dataTestId="block-category-scores"
+          noInnerPadding
+        >
+        <div className="grid gap-4 md:grid-cols-3">
           <Card className="border-card-border bg-card p-5">
             <div className="mb-3 flex items-center justify-between">
               <div className="font-semibold">Риски</div>
@@ -342,17 +349,16 @@ export default function ReportPage() {
             )}
           </Card>
         </div>
+        </CollapsibleSection>
 
         {/* Детализация по субкатегориям */}
         {r.subcategoryBreakdown && r.subcategoryBreakdown.length > 0 && (
-          <Card className="mb-6 border-card-border bg-card p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <Target className="h-4 w-4 text-primary" />
-              <div className="font-semibold">Разбивка по субкатегориям</div>
-              <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                взвешенный скор × confidence + плотность
-              </div>
-            </div>
+          <CollapsibleSection
+            icon={<Target className="h-4 w-4 text-primary" />}
+            title="Разбивка по субкатегориям"
+            meta="взвешенный скор × confidence + плотность"
+            dataTestId="block-subcategories"
+          >
             <div className="grid gap-2 md:grid-cols-2">
               {r.subcategoryBreakdown.map((s) => (
                 <div
@@ -381,10 +387,10 @@ export default function ReportPage() {
                 </div>
               ))}
             </div>
-          </Card>
+          </CollapsibleSection>
         )}
 
-        {/* Детали по трём основным категориям */}
+        {/* Детали по трём основным категориям — каждая сворачиваемая */}
         <CategorySection
           title="1. Общие риски"
           cat={r.risks}
@@ -402,63 +408,80 @@ export default function ReportPage() {
         />
 
         {/* Wolf Detector v1.0 — усиленная проверка */}
-        {r.wolfAudit && <WolfReport audit={r.wolfAudit} />}
+        {r.wolfAudit && (
+          <CollapsibleSection
+            icon={<ShieldCheck className="h-4 w-4 text-primary" />}
+            title="Wolf Detector v1.0"
+            meta="усиленная проверка по «волкам»"
+            dataTestId="block-wolf-detector"
+            noInnerPadding
+          >
+            <WolfReport audit={r.wolfAudit} />
+          </CollapsibleSection>
+        )}
 
         {/* Recruiter Action Plan */}
         {r.recruiterActionPlan && r.recruiterActionPlan.length > 0 && (
-          <Card className="mt-6 border-primary/30 bg-primary/[0.03] p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <ListChecks className="h-4 w-4 text-primary" />
-              <div className="font-semibold">План действий для рекрутера</div>
-              <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                пошаговая верификация
-              </div>
-            </div>
+          <CollapsibleSection
+            icon={<ListChecks className="h-4 w-4 text-primary" />}
+            title="План действий для рекрутера"
+            meta="пошаговая верификация"
+            tone="primary"
+            dataTestId="block-recruiter-plan"
+          >
             <ol className="space-y-3">
               {r.recruiterActionPlan.map((action) => (
                 <ActionStep key={action.step} action={action} />
               ))}
             </ol>
-          </Card>
+          </CollapsibleSection>
         )}
 
         {/* Вопросы и рекомендации */}
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <Card className="border-card-border bg-card p-5">
-            <div className="mb-3 font-semibold">Вопросы для верификации</div>
-            {r.interviewQuestions.length === 0 ? (
-              <div className="text-sm italic text-muted-foreground">
-                Модель не предложила вопросов.
-              </div>
-            ) : (
-              <ol className="space-y-2 text-sm">
-                {r.interviewQuestions.map((q, i) => (
-                  <li key={i} className="flex gap-3">
-                    <span className="font-mono text-xs text-primary">{i + 1}.</span>
-                    <span>{q}</span>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </Card>
-          <Card className="border-card-border bg-card p-5">
-            <div className="mb-3 font-semibold">Рекомендации СБ</div>
-            {r.sbRecommendations.length === 0 ? (
-              <div className="text-sm italic text-muted-foreground">
-                Рекомендации не сформированы.
-              </div>
-            ) : (
-              <ul className="space-y-2 text-sm">
-                {r.sbRecommendations.map((s, i) => (
-                  <li key={i} className="flex gap-3">
-                    <span className="text-primary">▸</span>
-                    <span>{s}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-        </div>
+        <CollapsibleSection
+          icon={<FileText className="h-4 w-4 text-primary" />}
+          title="Вопросы и рекомендации СБ"
+          meta="для интервью и дальнейшей проверки"
+          dataTestId="block-questions-recs"
+          noInnerPadding
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card className="border-card-border bg-card p-5">
+              <div className="mb-3 font-semibold">Вопросы для верификации</div>
+              {r.interviewQuestions.length === 0 ? (
+                <div className="text-sm italic text-muted-foreground">
+                  Модель не предложила вопросов.
+                </div>
+              ) : (
+                <ol className="space-y-2 text-sm">
+                  {r.interviewQuestions.map((q, i) => (
+                    <li key={i} className="flex gap-3">
+                      <span className="font-mono text-xs text-primary">{i + 1}.</span>
+                      <span>{q}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </Card>
+            <Card className="border-card-border bg-card p-5">
+              <div className="mb-3 font-semibold">Рекомендации СБ</div>
+              {r.sbRecommendations.length === 0 ? (
+                <div className="text-sm italic text-muted-foreground">
+                  Рекомендации не сформированы.
+                </div>
+              ) : (
+                <ul className="space-y-2 text-sm">
+                  {r.sbRecommendations.map((s, i) => (
+                    <li key={i} className="flex gap-3">
+                      <span className="text-primary">▸</span>
+                      <span>{s}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
+        </CollapsibleSection>
 
         <div className="mt-8 rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-relaxed text-muted-foreground">
           <Bot className="mr-1.5 inline h-3 w-3" />
@@ -603,11 +626,32 @@ function CategorySection({
   cat: FullReport["risks"];
   accent: string;
 }) {
+  const [open, setOpen] = useState(true);
+  const color =
+    cat.score >= 61
+      ? "hsl(0 72% 55%)"
+      : cat.score >= 31
+      ? "hsl(38 92% 55%)"
+      : "hsl(142 60% 50%)";
   return (
-    <Card className="mb-4 border-card-border bg-card p-6">
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <div className="text-lg font-semibold">{title}</div>
+    <Card className="mb-4 border-card-border bg-card p-0 overflow-hidden print:overflow-visible">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-start justify-between gap-4 p-6 text-left transition-colors hover-elevate active-elevate-2 print:cursor-default"
+        aria-expanded={open}
+        data-testid={`category-toggle-${title}`}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 print:hidden",
+                !open && "-rotate-90",
+              )}
+            />
+            <div className="text-lg font-semibold">{title}</div>
+          </div>
           <div className="mt-1 text-xs font-mono uppercase tracking-widest text-primary">
             {accent}
           </div>
@@ -616,35 +660,99 @@ function CategorySection({
           )}
         </div>
         <div className="shrink-0 text-right">
-          <div
-            className="font-mono text-3xl font-bold"
-            style={{
-              color:
-                cat.score >= 61
-                  ? "hsl(0 72% 55%)"
-                  : cat.score >= 31
-                  ? "hsl(38 92% 55%)"
-                  : "hsl(142 60% 50%)",
-            }}
-          >
+          <div className="font-mono text-3xl font-bold" style={{ color }}>
             {cat.score}
           </div>
           <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
             из 100
           </div>
         </div>
-      </div>
+      </button>
 
-      {cat.findings.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border p-6 text-center text-sm italic text-muted-foreground">
-          Детекторов в этой категории не сработало.
+      {(open || typeof window === "undefined") && (
+        <div className="px-6 pb-6 print:block">
+          {cat.findings.length === 0 ? (
+            <div className="rounded-md border border-dashed border-border p-6 text-center text-sm italic text-muted-foreground">
+              Детекторов в этой категории не сработало.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {cat.findings.map((f, i) => (
+                <FindingCard key={`${f.id}-${i}`} finding={f} />
+              ))}
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="space-y-2">
-          {cat.findings.map((f, i) => (
-            <FindingCard key={`${f.id}-${i}`} finding={f} />
-          ))}
+      )}
+    </Card>
+  );
+}
+
+// Универсальный сворачиваемый блок отчёта
+function CollapsibleSection({
+  title,
+  meta,
+  icon,
+  children,
+  defaultOpen = false,
+  tone = "default",
+  noInnerPadding = false,
+  dataTestId,
+}: {
+  title: React.ReactNode;
+  meta?: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  tone?: "default" | "danger" | "primary";
+  noInnerPadding?: boolean;
+  dataTestId?: string;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const toneCls =
+    tone === "danger"
+      ? "border-red-500/30 bg-red-500/5"
+      : tone === "primary"
+      ? "border-primary/30 bg-primary/[0.03]"
+      : "border-card-border bg-card";
+  return (
+    <Card
+      className={cn(
+        "mb-4 overflow-hidden p-0 print:overflow-visible",
+        toneCls,
+      )}
+      data-testid={dataTestId}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 p-5 text-left transition-colors hover-elevate active-elevate-2 print:cursor-default"
+        aria-expanded={open}
+      >
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 print:hidden",
+            !open && "-rotate-90",
+          )}
+        />
+        {icon}
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold">{title}</div>
+          {meta && (
+            <div className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              {meta}
+            </div>
+          )}
         </div>
+      </button>
+      {open && (
+        <div className={cn(noInnerPadding ? "px-5 pb-5" : "px-5 pb-5")}>
+          {children}
+        </div>
+      )}
+      {/* при печати всегда показываем содержимое */}
+      {!open && (
+        <div className="hidden print:block px-5 pb-5">{children}</div>
       )}
     </Card>
   );
