@@ -219,13 +219,14 @@ export function buildTimeline(resumeText: string, etk: EtkStructured): TimelineM
 const EDU_SECTION_RE = /^(\s*)(образование|высшее\s+образование|образование\s+и\s+повышение|academic\s+background|education)(\s*[:\-]?)\s*$/i;
 const EDU_END_RE = /^(\s*)(опыт\s+работы|работа|experience|навыки|skills|ключевые\s+навыки|профессиональные\s+навыки|языки|languages|дополнительное\s+образование|курсы|сертификаты|о\s+себе|about|контакты|contacts|рекомендации|хобби)(\s*[:\-]?)\s*$/i;
 
-const DEGREE_PATTERNS: Array<{ re: RegExp; level: EducationSpan["level"] }> = [
-  { re: /\b(бакалавр|bachelor)\b/i, level: "bachelor" },
-  { re: /\b(магистр|master)\b/i, level: "master" },
-  { re: /\b(специалист|specialist|диплом\s+специалиста)\b/i, level: "specialist" },
-  { re: /\b(кандидат\s+наук|phd|ph\.d|аспирант(ура)?|доктор\s+наук)\b/i, level: "phd" },
-  { re: /\b(колледж|техникум|училище|ссуз|college|среднее\s+проф)\b/i, level: "college" },
-  { re: /\b(школа|лицей|гимназия|school|высшее)\b/i, level: "school" },
+// \b не работает с кириллицей в JS, поэтому используем (?:^|\W)...(?:$|\W) для границ слов
+const DEGREE_PATTERNS: Array<{ re: RegExp; level: NonNullable<EducationSpan["level"]> }> = [
+  { re: /(^|[^а-яёА-ЯЁa-zA-Z])(кандидат\s+наук|phd|ph\.d|аспирантур|доктор\s+наук)/i, level: "phd" },
+  { re: /(^|[^а-яёА-ЯЁa-zA-Z])(магистр|master)(?![а-яёА-ЯЁa-zA-Z])/i, level: "master" },
+  { re: /(^|[^а-яёА-ЯЁa-zA-Z])(бакалавр|bachelor)(?![а-яёА-ЯЁa-zA-Z])/i, level: "bachelor" },
+  { re: /(^|[^а-яёА-ЯЁa-zA-Z])(специалитет|специалист|specialist|диплом\s+специалиста)(?![а-яёА-ЯЁa-zA-Z])/i, level: "specialist" },
+  { re: /(^|[^а-яёА-ЯЁa-zA-Z])(колледж|техникум|училище|ссуз|college|среднее\s+проф)(?![а-яёА-ЯЁa-zA-Z])/i, level: "college" },
+  { re: /(^|[^а-яёА-ЯЁa-zA-Z])(школа|лицей|гимназия|school)(?![а-яёА-ЯЁa-zA-Z])/i, level: "school" },
 ];
 
 function detectDegreeLevel(text: string): EducationSpan["level"] | undefined {
@@ -308,35 +309,43 @@ export function extractEducationFromText(resumeText: string): EducationSpan[] {
 
 function parseEduBlock(block: string[]): EducationSpan[] {
   const out: EducationSpan[] = [];
-  // Группируем строки: каждая запись об образовании обычно 1–3 строки.
-  // Ищем строки с датами — это якорь записи.
+  const uniRe = /(университет|институт|академия|university|institute|academy|колледж|техникум|лицей|гимназия|школа|МГУ|СПбГУ|МФТИ|МГТУ|ВШЭ|HSE|МГИМО|РАНХиГС|Бауман)/i;
+
+  // Стратегия: ищем строки, где регекс дат найдёт валидный диапазон *в одной строке*.
+  // Текст типа «бакалавр 2014» в соседних строках ломает парсер, поэтому не клеим линии.
   for (let i = 0; i < block.length; i++) {
     const line = block[i];
     if (!line.trim()) continue;
-    const ctxLines = [block[i - 1] || "", line, block[i + 1] || "", block[i + 2] || ""];
-    const ctx = ctxLines.join(" ");
-    const range = extractEduDateRange(ctx);
+    // Сначала пробуем найти диапазон в самой строке
+    const range = extractEduDateRange(line);
     if (!range || !range.startISO) continue;
-    // Ищем название ВУЗа — в текущей или соседних строках
-    const uniRe = /(университет|институт|академия|university|institute|academy|колледж|техникум|лицей|гимназия|школа|МГУ|СПбГУ|МФТИ|МГТУ|ВШЭ|HSE|МГИМО|РАНХиГС)/i;
+
+    // Ищем название ВУЗа в соседних строках: текущая, предыдущая, следующая
+    const candidates = [line, block[i - 1] || "", block[i - 2] || "", block[i + 1] || ""];
     let institution = "";
-    for (const cand of ctxLines) {
+    let field: string | undefined;
+    for (const cand of candidates) {
       if (uniRe.test(cand)) {
         institution = cand.replace(range.matched, "").replace(/^[\s,•\-—]+|[\s,•\-—]+$/g, "").trim();
         break;
       }
     }
     if (!institution) {
-      // Берём строку с датой, без диапазона
-      institution = line.replace(range.matched, "").replace(/^[\s,•\-—()]+|[\s,•\-—()]+$/g, "").trim();
+      // Если дата одна на строке — берём предыдущую строку как имя
+      institution = (block[i - 1] || line.replace(range.matched, "")).replace(/^[\s,•\-—()]+|[\s,•\-—()]+$/g, "").trim();
     }
     if (!institution || institution.length < 3) continue;
     institution = institution.slice(0, 200);
 
-    // Факультет / специальность — следующая строка
-    const fieldCandidate = (block[i + 1] || "").trim();
-    const field = fieldCandidate && !extractEduDateRange(fieldCandidate) ? fieldCandidate.slice(0, 200) : undefined;
+    // Факультет / специальность — строка между ВУЗом и датой
+    for (const cand of [block[i - 1] || "", block[i - 2] || ""]) {
+      if (cand && cand !== institution && !uniRe.test(cand) && !extractEduDateRange(cand)) {
+        field = cand.trim().slice(0, 200);
+        break;
+      }
+    }
 
+    const ctx = [block[i - 2] || "", block[i - 1] || "", line, block[i + 1] || ""].join(" ");
     out.push({
       institution,
       field,
@@ -345,8 +354,6 @@ function parseEduBlock(block: string[]): EducationSpan[] {
       months: monthsBetween(range.startISO, range.endISO) ?? 0,
       level: detectDegreeLevel(ctx),
     });
-    // Пропускаем следующую строку, чтобы не дублировать запись
-    if (field) i += 1;
   }
   return out;
 }
