@@ -23,8 +23,6 @@ import {
   Users,
 } from "lucide-react";
 import type { FullReport } from "@/lib/types";
-import detectiveImg from "@/assets/detective.jpg";
-import wolfhoundImg from "@/assets/wolfhound.jpg";
 
 export default function Home() {
   const [, navigate] = useLocation();
@@ -75,65 +73,44 @@ export default function Home() {
   const tooShort = text.trim().length < 100;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="relative min-h-screen bg-background overflow-hidden">
+      {/* Мягкие декоративные blobs на фоне — создают ощущение глубины и «дыхания» */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-0 overflow-hidden"
+      >
+        <div className="absolute -top-32 -left-20 h-80 w-80 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute top-1/3 -right-24 h-96 w-96 rounded-full bg-orange-500/5 blur-3xl" />
+        <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-primary/5 blur-3xl" />
+      </div>
+
       <Header />
 
-      <main className="mx-auto max-w-5xl px-6 py-10">
-        {/* Hero с парной визиткой  детектив + волкодав  */}
-        <div className="mb-6 grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
-          <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-primary">
-              <ShieldAlert className="h-3 w-3" />
-              Проверка без ПДн · Yandex GPT
-            </div>
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
-              Жёсткая проверка резюме — без персональных данных
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Сервис анализирует риски, накрутку опыта и принадлежность сообществу «волков»,
-              <strong className="font-semibold text-foreground"> не используя ФИО, паспорт,
-              точный телефон и полный email</strong>. В модель уходит только обезличенный текст
-              резюме. При этом сохраняются <strong className="font-semibold text-foreground">косвенные
-              маркеры контактов</strong> — домен почты (gmail.com, yandex.ru, корпоративный), префикс
-              мобильного (+7 9XX), город, ссылки на соцсети — они остаются для оценки риска.
-            </p>
+      <main className="relative mx-auto max-w-5xl px-6 py-10">
+        {/* Hero */}
+        <section className="mb-8 animate-in fade-in duration-500">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-primary shadow-[0_0_20px_-6px_hsl(var(--primary)/0.5)] transition-all duration-300 hover:bg-primary/15">
+            <ShieldAlert className="h-3 w-3" />
+            Проверка без ПДн · Yandex GPT
           </div>
-
-          {/* Парная визитка: детектив ищет — волкодав охраняет стаю */}
-          <div
-            className="hidden md:flex shrink-0 items-end gap-3 rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-4 pr-5"
-            data-testid="hero-mascots"
-          >
-            <div className="flex flex-col items-center gap-1">
-              <div className="relative h-28 w-28 overflow-hidden rounded-xl border border-primary/25 bg-background/60 p-2">
-                <img
-                  src={detectiveImg}
-                  alt="Детектив с лупой"
-                  className="h-full w-full object-contain mix-blend-multiply dark:mix-blend-screen"
-                  draggable={false}
-                />
-              </div>
-              <div className="font-mono text-[9px] uppercase tracking-widest text-primary">ищет</div>
-            </div>
-            <div className="flex flex-col items-center gap-1">
-              <div className="relative h-28 w-28 overflow-hidden rounded-xl border border-primary/25 bg-background/60 p-2">
-                <img
-                  src={wolfhoundImg}
-                  alt="Волкодав"
-                  className="h-full w-full object-contain mix-blend-multiply dark:mix-blend-screen"
-                  draggable={false}
-                />
-              </div>
-              <div className="font-mono text-[9px] uppercase tracking-widest text-primary">охраняет</div>
-            </div>
-          </div>
-        </div>
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
+            Жёсткая проверка резюме — без персональных данных
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            Сервис анализирует риски, накрутку опыта и принадлежность сообществу «волков»,
+            <strong className="font-semibold text-foreground"> не используя ФИО, паспорт,
+            точный телефон и полный email</strong>. В модель уходит только обезличенный текст
+            резюме. При этом сохраняются <strong className="font-semibold text-foreground">косвенные
+            маркеры контактов</strong> — домен почты (gmail.com, yandex.ru, корпоративный), префикс
+            мобильного (+7 9XX), город, ссылки на соцсети — они остаются для оценки риска.
+          </p>
+        </section>
 
         {/* ────────── Баннер «Без ПДн» — компактно, свёрнут по умолчанию ────────── */}
         <Accordion type="single" collapsible className="mb-4">
           <AccordionItem
             value="pdn"
-            className="rounded-lg border border-primary/40 bg-primary/5 px-4"
+            className="rounded-xl border border-primary/30 bg-primary/5 px-4 backdrop-blur-sm transition-all duration-300 hover:border-primary/50 hover:bg-primary/[0.07]"
           >
             <AccordionTrigger
               data-testid="trigger-pdn"
@@ -177,7 +154,7 @@ export default function Home() {
         </Accordion>
 
         {/* ═════════════ ОСНОВНОЕ ОКНО ЗАПУСКА ПРОВЕРКИ ═════════════ */}
-        <Card className="border-card-border bg-card p-6">
+        <Card className="relative rounded-2xl border-card-border bg-card/95 p-6 shadow-[0_10px_40px_-20px_rgba(0,0,0,0.45)] backdrop-blur-sm transition-all duration-300 hover:shadow-[0_14px_50px_-18px_rgba(0,0,0,0.55)]">
           <div className="mb-4 flex items-center justify-between">
             <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
               Вход: текст резюме
@@ -201,6 +178,7 @@ export default function Home() {
                 onClick={() => fileInput.current?.click()}
                 disabled={loading}
                 data-testid="button-upload"
+                className="transition-all duration-200 hover:border-primary/60 hover:bg-primary/5"
               >
                 {extractMut.isPending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -213,7 +191,7 @@ export default function Home() {
           </div>
 
           {fileName && (
-            <div className="mb-3 flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground animate-in fade-in slide-in-from-top-1 duration-300">
               <FileText className="h-3.5 w-3.5" />
               <span className="font-mono">{fileName}</span>
               <span className="ml-auto text-[10px] uppercase tracking-wide">
@@ -226,7 +204,7 @@ export default function Home() {
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Вставьте текст резюме сюда или загрузите файл (PDF / DOCX / TXT).&#10;Минимум 100 символов."
-            className="min-h-[280px] resize-y font-mono text-xs"
+            className="min-h-[280px] resize-y rounded-xl font-mono text-xs transition-shadow duration-200 focus-visible:shadow-[0_0_0_3px_hsl(var(--primary)/0.15)]"
             data-testid="textarea-resume"
             disabled={loading}
           />
@@ -242,6 +220,7 @@ export default function Home() {
               disabled={loading || tooShort}
               onClick={() => analyzeMut.mutate(text)}
               data-testid="button-analyze"
+              className="transition-all duration-200 hover:shadow-[0_8px_24px_-10px_hsl(var(--primary)/0.6)] hover:-translate-y-0.5 active:translate-y-0"
             >
               {analyzeMut.isPending ? (
                 <>
@@ -258,10 +237,10 @@ export default function Home() {
           </div>
         </Card>
 
-        {/* ────────── v3.3 Подсказка про пайплайн (только инфо, без ссылки) ────────── */}
+        {/* ────────── v3.3 Подсказка про пайплайн ────────── */}
         <div
           data-testid="cta-pipeline-hint"
-          className="mt-6 block rounded-lg border border-border bg-muted/20 p-4"
+          className="mt-6 block rounded-xl border border-border bg-muted/20 p-4 backdrop-blur-sm transition-all duration-300 hover:border-primary/40 hover:bg-muted/30"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -279,26 +258,22 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ════════ НИЖНИЕ БЛОКИ: категории сигналов — компактные, свёрнутые ════════ */}
-        <div className="mt-10">
-          <div className="mb-3 flex items-center gap-2">
-            <img
-              src={detectiveImg}
-              alt=""
-              aria-hidden
-              className="h-7 w-7 object-contain mix-blend-multiply dark:mix-blend-screen"
-              draggable={false}
-            />
+        {/* ════════ НИЖНИЕ БЛОКИ: категории сигналов ════════ */}
+        <section className="mt-12">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
             <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              Матрица сигналов · на что смотрит детектив
+              🎪 Матрица сигналов · на что смотрит детектив
             </div>
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
           </div>
+
           <Accordion type="multiple" className="space-y-3">
             {SIGNAL_SECTIONS.map((section) => (
               <AccordionItem
                 key={section.title}
                 value={section.title}
-                className={`rounded-lg border ${section.accentClass} bg-card px-4`}
+                className={`rounded-xl border ${section.accentClass} bg-card/90 px-4 backdrop-blur-sm transition-all duration-300 hover:bg-card data-[state=open]:shadow-[0_8px_30px_-15px_rgba(0,0,0,0.5)]`}
               >
                 <AccordionTrigger
                   data-testid={`trigger-section-${section.title}`}
@@ -306,7 +281,7 @@ export default function Home() {
                 >
                   <div className="flex w-full items-center justify-between gap-3 pr-3">
                     <div className="flex items-center gap-2">
-                      <span className="text-base" aria-hidden>{section.emoji}</span>
+                      <span className="text-base transition-transform duration-300 group-hover:scale-110" aria-hidden>{section.emoji}</span>
                       <section.Icon className={`h-4 w-4 ${section.iconClass}`} />
                       <div className="text-sm font-semibold text-foreground">{section.title}</div>
                     </div>
@@ -322,7 +297,7 @@ export default function Home() {
                     {section.items.map((item) => (
                       <li
                         key={item.title}
-                        className="flex items-start gap-2.5 rounded-md border border-card-border bg-background/40 px-3 py-2"
+                        className="flex items-start gap-2.5 rounded-lg border border-card-border bg-background/40 px-3 py-2 transition-all duration-200 hover:border-card-border/80 hover:bg-background/60 hover:-translate-y-px"
                         data-testid={`signal-${item.title}`}
                       >
                         <span className="mt-0.5 text-base leading-none" aria-hidden>
@@ -339,45 +314,34 @@ export default function Home() {
               </AccordionItem>
             ))}
           </Accordion>
-          <p className="mt-3 text-center text-[11px] text-muted-foreground">
+
+          <p className="mt-4 text-center text-[11px] text-muted-foreground">
             🎭 Имена шуточные — под капотом строгая методология. Полное формальное описание —{" "}
             <Link href="/about">
-              <a className="text-primary underline decoration-dotted">на странице «О методике»</a>
+              <a className="text-primary underline decoration-dotted underline-offset-2 transition-colors hover:text-primary/80">
+                на странице «О методике»
+              </a>
             </Link>
             .
           </p>
-        </div>
+        </section>
 
-        {/* ────────── Wolf Detector v1.0 — переехал вниз: компактно, свёрнут по умолчанию ────────── */}
+        {/* ────────── Wolf Detector v1.0 — внизу под «Матрицей сигналов» ────────── */}
         <Accordion type="single" collapsible className="mt-10">
           <AccordionItem
             value="wolf"
-            className="relative overflow-hidden rounded-lg border-2 border-orange-500/40 bg-gradient-to-br from-orange-500/10 via-red-500/5 to-background px-4"
+            className="rounded-2xl border-2 border-orange-500/40 bg-gradient-to-br from-orange-500/10 via-red-500/5 to-background px-4 backdrop-blur-sm transition-all duration-300 hover:border-orange-500/60 hover:shadow-[0_10px_40px_-15px_rgba(249,115,22,0.35)]"
           >
-            {/* декоративный волкодав в углу — страж блока */}
-            <img
-              src={wolfhoundImg}
-              alt=""
-              aria-hidden
-              draggable={false}
-              className="pointer-events-none absolute -right-6 -bottom-4 h-40 w-40 opacity-25 mix-blend-multiply dark:mix-blend-screen sm:h-48 sm:w-48"
-            />
             <AccordionTrigger
               data-testid="trigger-wolf"
-              className="relative py-3 hover:no-underline [&>svg]:text-orange-300"
+              className="py-3 hover:no-underline [&>svg]:text-orange-300"
             >
               <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-orange-400">
-                <img
-                  src={wolfhoundImg}
-                  alt=""
-                  aria-hidden
-                  className="h-4 w-4 object-contain mix-blend-multiply dark:mix-blend-screen"
-                  draggable={false}
-                />
+                <span aria-hidden>🐺</span>
                 Wolf Detector v1.0 · усиленная проверка — кто прячется в стае
               </div>
             </AccordionTrigger>
-            <AccordionContent className="relative pb-4">
+            <AccordionContent className="pb-4">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-[240px] flex-1">
                   <div className="text-sm font-bold">
@@ -388,7 +352,7 @@ export default function Home() {
                     один из пяти устойчивых паттернов нелояльного кандидата.
                   </p>
                 </div>
-                <div className="rounded-lg border border-orange-500/30 bg-background/60 px-3 py-2 text-center">
+                <div className="rounded-xl border border-orange-500/30 bg-background/60 px-3 py-2 text-center">
                   <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                     Движок
                   </div>
@@ -407,7 +371,7 @@ export default function Home() {
                 ].map((a) => (
                   <div
                     key={a.title}
-                    className="rounded-md border border-orange-500/30 bg-background/50 p-2.5"
+                    className="rounded-lg border border-orange-500/30 bg-background/50 p-2.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-orange-500/50 hover:bg-background/70"
                   >
                     <div className="mb-1 flex items-center gap-1.5">
                       <span className="text-base" aria-hidden>{a.icon}</span>
@@ -429,7 +393,7 @@ export default function Home() {
                 ].map((t) => (
                   <span
                     key={t}
-                    className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[11px] text-orange-300"
+                    className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[11px] text-orange-300 transition-colors duration-200 hover:bg-orange-500/15"
                   >
                     {t}
                   </span>
@@ -581,4 +545,3 @@ const SIGNAL_SECTIONS = [
     ],
   },
 ] as const;
-
