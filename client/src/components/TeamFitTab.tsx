@@ -172,19 +172,6 @@ function TeamFitView({
               {dateStr}
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onRerun}
-            disabled={rerunPending}
-            data-testid="button-rerun-team-fit"
-          >
-            {rerunPending ? (
-              <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Перезапуск…</>
-            ) : (
-              <><RefreshCw className="mr-2 h-3.5 w-3.5" /> Перезапустить</>
-            )}
-          </Button>
         </div>
         {report.summary && (
           <p className="text-sm leading-relaxed text-foreground/90" data-testid="text-team-fit-summary">

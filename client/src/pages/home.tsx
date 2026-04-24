@@ -315,15 +315,6 @@ export default function Home() {
             ))}
           </Accordion>
 
-          <p className="mt-4 text-center text-[11px] text-muted-foreground">
-            🎭 Имена шуточные — под капотом строгая методология. Полное формальное описание —{" "}
-            <Link href="/about">
-              <a className="text-primary underline decoration-dotted underline-offset-2 transition-colors hover:text-primary/80">
-                на странице «О методике»
-              </a>
-            </Link>
-            .
-          </p>
         </section>
 
         {/* ────────── Wolf Detector v1.0 — внизу под «Матрицей сигналов» ────────── */}
@@ -402,6 +393,17 @@ export default function Home() {
             </AccordionContent>
           </AccordionItem>
         </Accordion>
+
+        {/* ────────── Дисклеймер про шуточные имена — под Wolf Detector ────────── */}
+        <p className="mt-6 text-center text-[11px] text-muted-foreground">
+          🎭 Имена шуточные — под капотом строгая методология. Полное формальное описание —{" "}
+          <Link href="/about">
+            <a className="text-primary underline decoration-dotted underline-offset-2 transition-colors hover:text-primary/80">
+              на странице «О методике»
+            </a>
+          </Link>
+          .
+        </p>
       </main>
     </div>
   );
