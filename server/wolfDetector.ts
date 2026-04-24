@@ -4,6 +4,7 @@
 // ============================================================
 
 import { yandexComplete } from "./yandex";
+import { isPhantom, stripPhantomText, stripPhantomArray } from "./pipelineAnalyzer";
 import type {
   WolfAudit,
   TimelineEntry,
@@ -98,7 +99,25 @@ function buildWolfPrompt(
     context.additionalContext ? `Дополнительно: ${context.additionalContext}` : "",
   ].filter(Boolean).join("\n");
 
+  const nowIso = new Date().toISOString().slice(0, 10);
+  const nowYear = new Date().getUTCFullYear();
+  const nowMonth = new Date().getUTCMonth() + 1;
+
   return `Проведи полный 8-проходный риск-аудит резюме по методологии Wolf Detector v1.0 (проход 8 — Wolf School Detector, подфича).
+
+[ТЕКУЩАЯ ДАТА] ${nowIso} — это «сегодня». Календарный год: ${nowYear}, месяц: ${nowMonth}.
+
+⛔ АБСОЛЮТНЫЙ ЗАПРЕТ на следующие формулировки (любая такая будет УДАЛЕНА программно):
+1. «работа в будущем»,  «работает в будущем», «начинается в будущем», «на X лет/месяцев в будущем», «будущее время».
+2. «телепорт» / «teleport» в любом контексте.
+3. «аномалии хронологии», «хронологическое противоречие», «временное противоречие».
+4. «указывает на фальсификацию» как вывод из сравнения дат.
+5. Сравнение даты в резюме с датой обновления документа или вывод «современный период в будущем».
+6. Записи вида «с апреля 2024 по настоящее время (2 года)» когда [ТЕКУЩАЯ ДАТА] находится после этой даты начала — это НОРМА, не пиши про них как про «фальсификацию».
+
+Правило: если дата начала работы ДО [ТЕКУЩЕЙ ДАТЫ] — это НЕ будущее. «По настоящее время» = до [ТЕКУЩЕЙ ДАТЫ], а НЕ до даты обновления резюме. Если в резюме написано «${nowYear - 2}-${nowYear} (два года)» — считай это корректным.
+
+Тип аномалии «teleport» ОТМЕНёН — НЕ используй его. Допустимые типы timelineAnomalies: overlap | gap | too-short | age-vs-tenure.
 
 ==============================
 КОНТЕКСТ
@@ -111,8 +130,9 @@ ${ctx || "— контекст не передан —"}
 
 ПРОХОД 1 — ВРЕМЕННА́Я ШКАЛА И ХРОНОЛОГИЯ
 - Построй полную временну́ю линию всех мест работы.
-- Вычисли длительность каждого периода в месяцах.
-- Найди: пересечения дат, пробелы > 3 мес без объяснения, слишком короткие периоды < 2 мес, «телепортации» между городами.
+- Вычисли длительность каждого периода в месяцах (дата окончания = [ТЕКУЩАЯ ДАТА] для открытых периодов).
+- Найди: пересечения дат, пробелы > 3 мес без объяснения, слишком короткие периоды < 2 мес.
+- НЕ используй тип «teleport» и не пиши про «работу в будущем» — см. блок [ТЕКУЩАЯ ДАТА] выше.
 - Проверь соответствие возраста суммарному стажу.
 
 ПРОХОД 2 — КАРЬЕРНАЯ ПРОГРЕССИЯ
@@ -175,7 +195,7 @@ OUTPUT SCHEMA — строгий JSON
   "timeline": [
     {"company": "...", "role": "...", "period": "2020-01 — 2022-06", "durationMonths": 30, "verifiability": "high|medium|low|unknown", "verifiabilityReason": "..."}
   ],
-  "timelineAnomalies": [{"type": "overlap|gap|too-short|teleport|age-vs-tenure", "description": "...", "quote": "..."}],
+  "timelineAnomalies": [{"type": "overlap|gap|too-short|age-vs-tenure", "description": "...", "quote": "..."}],
   "declaredTenureYears": number|null,
   "calculatedTenureYears": number|null,
 
@@ -307,7 +327,7 @@ ${resumeText.slice(0, 14000)}
 // ============ Валидация / нормализация ============
 
 const VERIFIABILITY = ["high", "medium", "low", "unknown"] as const;
-const TIMELINE_ANOMALY_TYPES = ["overlap", "gap", "too-short", "teleport", "age-vs-tenure"] as const;
+const TIMELINE_ANOMALY_TYPES = ["overlap", "gap", "too-short", "age-vs-tenure"] as const;
 const PROGRESSION_ANOMALY_TYPES = ["too-fast", "unexplained-downshift", "title-duplication", "title-vs-duties"] as const;
 const EMPLOYER_STATUS = ["known", "startup", "closed", "foreign", "freelance", "unclear"] as const;
 const VERIF_RISK = ["low", "medium", "high"] as const;
@@ -394,20 +414,44 @@ function normTimeline(arr: any): TimelineEntry[] {
 
 function normTimelineAnomalies(arr: any): TimelineAnomaly[] {
   if (!Array.isArray(arr)) return [];
-  return arr.slice(0, 20).map((a: any) => ({
-    type: pickEnum(a?.type, TIMELINE_ANOMALY_TYPES, "gap"),
-    description: String(a?.description || "").slice(0, 600),
-    quote: a?.quote ? String(a.quote).slice(0, 500) : undefined,
-  })).filter((x: TimelineAnomaly) => x.description.length > 0);
+  return arr.slice(0, 20)
+    .map((a: any) => {
+      const rawType = String(a?.type || "").toLowerCase();
+      // Блокируем телепорт — вместо него gap (если вообще останется)
+      if (rawType === "teleport") return null;
+      const description = String(a?.description || "").slice(0, 600);
+      const quote = a?.quote ? String(a.quote).slice(0, 500) : undefined;
+      // Фильтр фантомных формулировок на описании и цитате
+      if (isPhantom(description)) return null;
+      if (quote && isPhantom(quote)) return null;
+      const cleanDesc = stripPhantomText(description);
+      if (!cleanDesc) return null;
+      return {
+        type: pickEnum(a?.type, TIMELINE_ANOMALY_TYPES, "gap"),
+        description: cleanDesc,
+        quote,
+      } as TimelineAnomaly;
+    })
+    .filter((x: TimelineAnomaly | null): x is TimelineAnomaly => x !== null && x.description.length > 0);
 }
 
 function normProgressionAnomalies(arr: any): ProgressionAnomaly[] {
   if (!Array.isArray(arr)) return [];
-  return arr.slice(0, 20).map((a: any) => ({
-    type: pickEnum(a?.type, PROGRESSION_ANOMALY_TYPES, "too-fast"),
-    description: String(a?.description || "").slice(0, 600),
-    quote: a?.quote ? String(a.quote).slice(0, 500) : undefined,
-  })).filter((x: ProgressionAnomaly) => x.description.length > 0);
+  return arr.slice(0, 20)
+    .map((a: any) => {
+      const description = String(a?.description || "").slice(0, 600);
+      const quote = a?.quote ? String(a.quote).slice(0, 500) : undefined;
+      if (isPhantom(description)) return null;
+      if (quote && isPhantom(quote)) return null;
+      const cleanDesc = stripPhantomText(description);
+      if (!cleanDesc) return null;
+      return {
+        type: pickEnum(a?.type, PROGRESSION_ANOMALY_TYPES, "too-fast"),
+        description: cleanDesc,
+        quote,
+      } as ProgressionAnomaly;
+    })
+    .filter((x: ProgressionAnomaly | null): x is ProgressionAnomaly => x !== null && x.description.length > 0);
 }
 
 function normEmployers(arr: any): EmployerCheck[] {
@@ -447,13 +491,20 @@ function normWolfSignals(arr: any): WolfSignal[] {
       WOLF_SIGNAL_CATEGORIES,
       TYPE_TO_CATEGORY[type] || "narrative",
     ) as WolfSignalCategory;
+    const titleRaw = String(s?.title || "").slice(0, 200);
+    const descRaw = String(s?.description || "").slice(0, 800);
+    const title = stripPhantomText(titleRaw);
+    const description = stripPhantomText(descRaw);
+    const evidence = Array.isArray(s?.evidence)
+      ? stripPhantomArray(s.evidence.map(String)).slice(0, 6)
+      : [];
     return {
       type,
       category,
       severity: pickEnum(s?.severity, SIGNAL_SEVERITY, "medium"),
-      title: String(s?.title || "").slice(0, 200),
-      description: String(s?.description || "").slice(0, 800),
-      evidence: Array.isArray(s?.evidence) ? s.evidence.map(String).slice(0, 6) : [],
+      title,
+      description,
+      evidence,
     };
   }).filter((x: WolfSignal) => x.title.length > 0);
 }
@@ -582,9 +633,14 @@ function normalizeWolfAudit(parsed: any): WolfAudit {
   const calculated = Number.isFinite(Number(parsed?.calculatedTenureYears))
     ? Number(parsed.calculatedTenureYears) : null;
 
+  const rawExec = parsed?.executiveSummary ? String(parsed.executiveSummary).slice(0, 1500) : "";
+  const execClean = stripPhantomText(rawExec);
+  const rawProgLogic = String(parsed?.progressionLogic || "").slice(0, 1000);
+  const progLogicClean = stripPhantomText(rawProgLogic);
+
   return {
     version: "1.0",
-    executiveSummary: parsed?.executiveSummary ? String(parsed.executiveSummary).slice(0, 1500) : undefined,
+    executiveSummary: execClean ? execClean : undefined,
     archetypes: normArchetypes(parsed?.archetypes),
 
     timeline: normTimeline(parsed?.timeline),
@@ -592,7 +648,7 @@ function normalizeWolfAudit(parsed: any): WolfAudit {
     declaredTenureYears: declared,
     calculatedTenureYears: calculated,
 
-    progressionLogic: String(parsed?.progressionLogic || "").slice(0, 1000),
+    progressionLogic: progLogicClean,
     progressionAnomalies: normProgressionAnomalies(parsed?.progressionAnomalies),
     progressionVerdict: pickEnum(parsed?.progressionVerdict, PROGRESSION_VERDICT, "normal"),
 
@@ -620,16 +676,19 @@ function normalizeWolfAudit(parsed: any): WolfAudit {
 
     wolfSignals: normWolfSignals(parsed?.wolfSignals),
     wolfIndex,
-    wolfInterpretation: String(parsed?.wolfInterpretation || "").slice(0, 1000),
+    wolfInterpretation: stripPhantomText(String(parsed?.wolfInterpretation || "").slice(0, 1000)),
 
     riskScore,
     riskLevel: String(parsed?.riskLevel || DEFAULT_RISK_LEVELS[riskScore]).slice(0, 100),
-    recommendation: String(parsed?.recommendation || DEFAULT_RECOMMENDATIONS[riskScore]).slice(0, 400),
+    recommendation: stripPhantomText(String(parsed?.recommendation || DEFAULT_RECOMMENDATIONS[riskScore]).slice(0, 400)) || DEFAULT_RECOMMENDATIONS[riskScore],
     topFindings: Array.isArray(parsed?.topFindings)
-      ? parsed.topFindings.slice(0, 5).map((t: any) => ({
-          title: String(t?.title || "").slice(0, 300),
-          quote: t?.quote ? String(t.quote).slice(0, 500) : undefined,
-        })).filter((t: any) => t.title.length > 0)
+      ? parsed.topFindings.slice(0, 5).map((t: any) => {
+          const title = stripPhantomText(String(t?.title || "").slice(0, 300));
+          const quote = t?.quote ? String(t.quote).slice(0, 500) : undefined;
+          if (!title) return { title: "", quote: undefined };
+          if (quote && isPhantom(quote)) return { title, quote: undefined };
+          return { title, quote };
+        }).filter((t: any) => t.title.length > 0)
       : [],
 
     interviewTriplets: normTriplets(parsed?.interviewTriplets),

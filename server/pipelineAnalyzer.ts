@@ -433,16 +433,22 @@ function repairJson(s: string): string {
 // Фильтр фантомных формулировок (даты/округления/резюме-в-будущем)
 // Это детерминированная страховка на случай, если LLM всё же выдаст запрещённые фразы.
 // =====================================================================
-const PHANTOM_PATTERNS: RegExp[] = [
+export const PHANTOM_PATTERNS: RegExp[] = [
   /фантомные?\s*(?:даты|период|опыт)/i,
   /работа(?:ет)?\s+в\s+будущем/i,
   /будущее?\s+время/i,
+  /в\s+будущем/i,
+  /на\s+\d+\s+(?:год|года|лет|месяц)\w*\s+в\s+будущ/i,
+  /начинает(?:ся)?\s+в\s+будущ/i,
   /работа\s+после\s+даты\s+резюме/i,
   /менее\s+24\s+месяц/i,
   /меньше\s+24\s+месяц/i,
   /хронологическое?\s+противоречи/i,
+  /временн(?:о́)?е?\s+противоречи/i,
+  /аномал\w+\s+хронолог/i,
   /искажение?\s+фактов/i,
   /фальсификация\s+хронолог/i,
+  /указывающ\w+\s+на\s+фальсификаци/i,
   /округление?\s+вверх/i,
   /близком\s+к\s+порогу/i,
   /дата\s+обновления\s+резюме/i,
@@ -450,16 +456,20 @@ const PHANTOM_PATTERNS: RegExp[] = [
   /после\s+обновления\s+резюме/i,
   /прошло\s+менее\s+\d+\s+месяц/i,
   /23\s+месяц\w*\s+представлен/i,
+  /телепорт\w*/i,
+  /текущий\s+опыт\s+\d+\s+(?:год|лет)\w*\s+в\s+будущ/i,
+  /что\s+делает\s+текущий\s+опыт/i,
+  /по\s+настоящее\s+время\s*\([^)]*\)\s*.{0,40}\s+будущ/i,
 ];
 
 /** Возвращает true, если строка содержит фантомные формулировки. */
-function isPhantom(text: string): boolean {
+export function isPhantom(text: string): boolean {
   if (!text) return false;
   return PHANTOM_PATTERNS.some((re) => re.test(text));
 }
 
 /** Удаляет фразы/предложения с фантомными упоминаниями из текста, сохраняя остальное. */
-function stripPhantomText(text: string): string {
+export function stripPhantomText(text: string): string {
   if (!text) return text;
   const parts = text.split(/(?<=[.!?—])\s+/);
   const clean = parts.filter((p) => !isPhantom(p));
@@ -469,7 +479,7 @@ function stripPhantomText(text: string): string {
 }
 
 /** Фильтрует массив строк от фантомных. */
-function stripPhantomArray(arr: string[]): string[] {
+export function stripPhantomArray(arr: string[]): string[] {
   return arr.map(stripPhantomText).filter((s) => s.length > 0);
 }
 
