@@ -731,7 +731,12 @@ function PipelineRunner({
                 </Link>
               )}
             </div>
-            <PipelineReport report={report} />
+            <PipelineReport
+              report={report}
+              parentCheckId={parentCheckId || undefined}
+              candidateDisplayName={report.candidateName || null}
+              pipelineId={savedPipelineId || undefined}
+            />
           </div>
         )}
     </Wrapper>

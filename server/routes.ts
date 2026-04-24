@@ -40,6 +40,11 @@ import { runPipelineAnalysis } from "./pipelineAnalyzer";
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
 
+function safeJsonParse(s: string | null | undefined): any {
+  if (!s) return null;
+  try { return JSON.parse(s); } catch { return s; }
+}
+
 async function extractPdfText(buf: Buffer): Promise<string> {
   // pdfjs-dist legacy-сборка работает в Node без canvas/native-зависимостей.
   const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -731,13 +736,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         });
       }
 
-      // Собираем контекст: базовый отчёт + последний пайплайн (если есть)
+      // Собираем контекст: все вкладки карточки кандидата (базовая проверка, пайплайн, Team Fit, GitHub DeepScan)
       const baseReport = JSON.parse(baseCheck.reportJson) as FullReport;
       const pipelines = await storage.listPipelinesByParent(baseCheck.id);
       const lastPipeline = pipelines[0]; // сортировка desc(created_at) уже на стороне ХРАНИЛИЩА
       const pipelineReport = lastPipeline
         ? (JSON.parse(lastPipeline.reportJson) as SingleStepReport)
         : null;
+      const teamFitRow = await storage.getTeamFitReportByCheckId(baseCheck.id);
+      const githubDeepRow = await storage.getGithubDeepScanReportByCheckId(baseCheck.id);
 
       // Компактный JSON срез отчётов (чтобы не перегружать контекст)
       const baseSlim = {
@@ -764,12 +771,42 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
             linguisticAudit: pipelineReport.linguisticAudit,
           }
         : null;
+      const teamFitSlim = teamFitRow
+        ? {
+            ocean: safeJsonParse(teamFitRow.ocean),
+            mbtiCluster: teamFitRow.mbtiCluster,
+            mbtiReasoning: teamFitRow.mbtiReasoning,
+            valueFit: safeJsonParse(teamFitRow.valueFit),
+            vendorFit: safeJsonParse(teamFitRow.vendorFit),
+            productFit: safeJsonParse(teamFitRow.productFit),
+            methodologyFit: safeJsonParse(teamFitRow.methodologyFit),
+            behavioralProfile: safeJsonParse(teamFitRow.behavioralProfile),
+            hypotheses: safeJsonParse(teamFitRow.hypotheses),
+            summary: teamFitRow.summary,
+            dataInsufficient: Boolean(teamFitRow.dataInsufficient),
+          }
+        : null;
+      const githubSlim = githubDeepRow
+        ? {
+            handle: githubDeepRow.githubHandle,
+            profileUrl: githubDeepRow.profileUrl,
+            sbScore: githubDeepRow.sbScore,
+            techScore: githubDeepRow.techScore,
+            behaviorScore: githubDeepRow.behaviorScore,
+            riskScore: githubDeepRow.riskScore,
+            confidence: githubDeepRow.confidence,
+            summary: githubDeepRow.summary,
+            recommendation: githubDeepRow.recommendation,
+            riskFlags: safeJsonParse(githubDeepRow.riskFlags),
+            dataInsufficient: Boolean(githubDeepRow.dataInsufficient),
+          }
+        : null;
 
       const systemPrompt = [
         "Ты — ассистент службы безопасности по имени bot-sbshnik.",
-        "Отвечай СТРОГО на основании двух отчётов ниже (базовая проверка + пайплайн, если есть). Не выдумывай факты.",
+        "Отвечай СТРОГО на основании отчётов ниже (базовая проверка, пайплайн, Team Fit, GitHub DeepScan — все вкладки карточки кандидата). Не выдумывай факты.",
         "Если в отчётах нет ответа на вопрос — прямо скажи: «информация не найдена в отчёте» и предложи шаг верификации.",
-        "ЗАПРЕЩЕНО утверждать «компания не существует/не зарегистрирована/фиктивна/ликвидирована/сайт не открывается/иНН не найден/пустышка». У тебя нет доступа к Реестрам (ЕГРЮЛ/ИНН) и к сайтам. Единственный допустимый статус: «Информация не найдена», + рекомендуй ручную проверку через ЕГРЮЛ/rusprofile.ru.",
+        "ЗАПРЕЩЕНО утверждать «компания не существует/не зарегистрирована/фиктивна/ликвидирована/сайт не открывается/ИНН не найден/пустышка». У тебя нет доступа к Реестрам (ЕГРЮЛ/ИНН) и к сайтам. Единственный допустимый статус: «Информация не найдена», + рекомендуй ручную проверку через ЕГРЮЛ/rusprofile.ru.",
         "Стиль: лаконично, профессионально, на русском. Можно markdown для списков.",
         "",
         "=== БАЗОВЫЙ ОТЧЁТ (JSON) ===",
@@ -778,6 +815,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         pipelineSlim
           ? "=== ПАЙПЛАЙН (JSON) ===\n" + JSON.stringify(pipelineSlim)
           : "=== ПАЙПЛАЙН не создан ===",
+        "",
+        teamFitSlim
+          ? "=== TEAM FIT (JSON) ===\n" + JSON.stringify(teamFitSlim)
+          : "=== TEAM FIT не запускался ===",
+        "",
+        githubSlim
+          ? "=== GITHUB DEEPSCAN (JSON) ===\n" + JSON.stringify(githubSlim)
+          : "=== GITHUB DEEPSCAN не запускался ===",
       ].join("\n");
 
       // Загружаем последние сообщения из базы для непрерывного диалога (макс 16)

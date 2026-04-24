@@ -116,7 +116,12 @@ export default function PipelineReportPage() {
           </div>
         </Card>
 
-        <PipelineReport report={data.report} />
+        <PipelineReport
+          report={data.report}
+          parentCheckId={data.parentId || undefined}
+          candidateDisplayName={data.candidateName || data.report.candidateName || null}
+          pipelineId={data.id}
+        />
 
         <div className="mt-8 rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-relaxed text-muted-foreground">
           Полный пайплайн: верификация опыта (ЭТК), анализ мотивации, Cultural Fit V3

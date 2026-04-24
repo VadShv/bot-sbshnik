@@ -1,4 +1,5 @@
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import type {
   SingleStepReport,
   VerificationStatus,
@@ -9,6 +10,7 @@ import type {
   RmBlockScore,
   AcidBlockClassification,
 } from "@/lib/types";
+import type { FullReport, TeamFitReport, GitHubDeepScanReport } from "@shared/schema";
 import {
   CheckCircle2,
   AlertTriangle,
@@ -27,8 +29,13 @@ import {
   Eye,
   BookText,
   ClipboardCheck,
+  Layers,
+  Download,
+  Users,
+  Github,
 } from "lucide-react";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 // Идет слово по уровню образования
 function levelLabel(level: string): string {
@@ -132,13 +139,60 @@ function scoreBar(score: number, total = 100): string {
 // Основной компонент
 // ==========================================================
 
-export function PipelineReport({ report }: { report: SingleStepReport }) {
+export function PipelineReport({
+  report,
+  parentCheckId,
+  candidateDisplayName,
+  pipelineId,
+}: {
+  report: SingleStepReport;
+  parentCheckId?: string;
+  candidateDisplayName?: string | null;
+  pipelineId?: string;
+}) {
   const tone = resolutionTone(report.resolution.code);
   const Icon = tone.icon;
   const vBadge = statusBadge(report.verification.status);
 
+  // Подгружаем все отчёты карточки, если задан parentCheckId
+  const baseCheckQuery = useQuery<{
+    id: string;
+    createdAt: number;
+    candidateName: string | null;
+    resumeText: string;
+    report: FullReport;
+  }>({
+    queryKey: ["/api/checks", parentCheckId],
+    enabled: Boolean(parentCheckId),
+  });
+  const teamFitQuery = useQuery<TeamFitReport | null>({
+    queryKey: ["/api/checks", parentCheckId, "team-fit"],
+    enabled: Boolean(parentCheckId),
+  });
+  const githubDeepQuery = useQuery<GitHubDeepScanReport | null>({
+    queryKey: ["/api/checks", parentCheckId, "github-deepscan"],
+    enabled: Boolean(parentCheckId),
+  });
+
+  const baseCheck = baseCheckQuery.data;
+  const teamFit = teamFitQuery.data || null;
+  const githubDeep = githubDeepQuery.data || null;
+
   return (
     <div className="space-y-5">
+      {/* Сводка по карточке кандидата (все вкладки) */}
+      {parentCheckId && (
+        <CandidateDossierSummary
+          parentCheckId={parentCheckId}
+          pipelineId={pipelineId}
+          pipelineReport={report}
+          candidateDisplayName={candidateDisplayName}
+          baseReport={baseCheck?.report || null}
+          teamFit={teamFit}
+          githubDeep={githubDeep}
+        />
+      )}
+
       {/* Executive Summary — сводка для руководителя */}
       {report.executiveSummary && (
         <Card className="border-card-border bg-gradient-to-br from-primary/5 via-background to-background p-5" data-testid="card-executive-summary">
@@ -822,3 +876,477 @@ function Chip({ label, tone }: { label: string; tone: "green" | "orange" | "red"
       : "border-red-500/30 bg-red-500/10 text-red-300";
   return <span className={`rounded-full border px-2 py-0.5 text-[10px] ${cls}`}>{label}</span>;
 }
+
+// ==========================================================
+// Сводка по карточке кандидата + кнопка скачать все отчёты одним файлом
+// ==========================================================
+
+function verdictBadgeBase(v: "green" | "yellow" | "red") {
+  switch (v) {
+    case "green":
+      return { label: "✅ Зелёный", cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" };
+    case "yellow":
+      return { label: "⚠️ Жёлтый", cls: "border-amber-500/40 bg-amber-500/10 text-amber-300" };
+    case "red":
+      return { label: "⛔ Красный", cls: "border-red-500/50 bg-red-500/10 text-red-300" };
+  }
+}
+
+function resolutionBadge(code: ResolutionCode) {
+  switch (code) {
+    case "RECOMMENDED":
+      return { label: "Рекомендован", cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" };
+    case "CONDITIONAL":
+      return { label: "Условно", cls: "border-amber-500/40 bg-amber-500/10 text-amber-300" };
+    case "UNVERIFIED":
+      return { label: "Не проверено", cls: "border-sky-500/40 bg-sky-500/10 text-sky-300" };
+    case "NOT_RECOMMENDED":
+      return { label: "Не рекомендован", cls: "border-red-500/50 bg-red-500/10 text-red-300" };
+  }
+}
+
+type SummaryTabRow = {
+  key: string;
+  title: string;
+  icon: any;
+  available: boolean;
+  primary: string;   // вердикт / score
+  secondary: string; // короткий комментарий
+  tone: "green" | "yellow" | "red" | "neutral";
+};
+
+function toneClasses(t: SummaryTabRow["tone"]) {
+  switch (t) {
+    case "green":
+      return "border-emerald-500/30 bg-emerald-500/5 text-emerald-200";
+    case "yellow":
+      return "border-amber-500/30 bg-amber-500/5 text-amber-200";
+    case "red":
+      return "border-red-500/30 bg-red-500/5 text-red-200";
+    default:
+      return "border-card-border bg-background/40 text-muted-foreground";
+  }
+}
+
+function aggregateFinalDecision(opts: {
+  base: FullReport | null;
+  pipeline: SingleStepReport;
+  teamFit: TeamFitReport | null;
+  github: GitHubDeepScanReport | null;
+}): { tone: "green" | "yellow" | "red"; headline: string; paragraph: string; bullets: string[] } {
+  const { base, pipeline, teamFit, github } = opts;
+  const bullets: string[] = [];
+
+  // По базовой проверке
+  let baseTone: "green" | "yellow" | "red" | null = null;
+  if (base) {
+    baseTone = base.verdict;
+    bullets.push(
+      `Базовая проверка: ${verdictBadgeBase(base.verdict).label.replace(/^[^А-яЁё]+/u, "")}, суммарный балл ${base.totalScore}/100`,
+    );
+  }
+
+  // По пайплайну
+  let pipeTone: "green" | "yellow" | "red" = "yellow";
+  if (pipeline.resolution.code === "RECOMMENDED") pipeTone = "green";
+  else if (pipeline.resolution.code === "NOT_RECOMMENDED") pipeTone = "red";
+  else if (pipeline.resolution.code === "CONDITIONAL" || pipeline.resolution.code === "UNVERIFIED") pipeTone = "yellow";
+  bullets.push(
+    `Пайплайн: ${resolutionBadge(pipeline.resolution.code).label}, интегральный балл ${pipeline.compositeScore}/100`,
+  );
+
+  // Лингвистика (внутри пайплайна)
+  let lingTone: "green" | "yellow" | "red" | null = null;
+  if (pipeline.linguisticAudit) {
+    const v = pipeline.linguisticAudit.verdict;
+    if (v === "honest") lingTone = "green";
+    else if (v === "mixed") lingTone = "yellow";
+    else lingTone = "red";
+    const verdictRu =
+      v === "honest" ? "честный нарратив" :
+      v === "mixed" ? "смешанный" :
+      v === "constructed" ? "сконструирован" : "фальсификация";
+    bullets.push(`Лингвистический слой: ${verdictRu}`);
+  }
+
+  // Team Fit
+  if (teamFit) {
+    bullets.push(
+      teamFit.dataInsufficient
+        ? "Team Fit: данных недостаточно для кластеризации"
+        : `Team Fit: кластер ${teamFit.mbtiCluster}`,
+    );
+  }
+
+  // GitHub Deep Scan
+  if (github) {
+    const flags = Array.isArray(github.riskFlags) ? github.riskFlags : [];
+    const highFlags = flags.filter((f: any) => f?.severity === "high").length;
+    bullets.push(
+      `GitHub DeepScan: профиль @${github.login}` +
+        (highFlags > 0 ? `, рисков high: ${highFlags}` : ", критических рисков не найдено"),
+    );
+  }
+
+  // Агрегация тона по всем вкладкам: худший выигрывает
+  const tones = [baseTone, pipeTone, lingTone].filter(Boolean) as ("green" | "yellow" | "red")[];
+  let finalTone: "green" | "yellow" | "red" = "green";
+  if (tones.includes("red") || pipeline.resolution.code === "NOT_RECOMMENDED") finalTone = "red";
+  else if (tones.includes("yellow") || pipeline.resolution.code === "CONDITIONAL" || pipeline.resolution.code === "UNVERIFIED") finalTone = "yellow";
+  else finalTone = "green";
+
+  let headline: string;
+  if (finalTone === "green") headline = "Сводное решение: кандидат рекомендован";
+  else if (finalTone === "yellow") headline = "Сводное решение: условная рекомендация";
+  else headline = "Сводное решение: кандидат не рекомендован";
+
+  const paragraph =
+    finalTone === "green"
+      ? "Оценки по всем активным вкладкам согласуются и указывают на низкий уровень риска."
+      : finalTone === "yellow"
+      ? "По части вкладок зафиксированы настораживающие сигналы — рекомендуется расширить проверку."
+      : "По одной или нескольким вкладкам выявлены критические риски. Рекомендуется отказ или углублённая проверка.";
+
+  return { tone: finalTone, headline, paragraph, bullets };
+}
+
+function CandidateDossierSummary({
+  parentCheckId,
+  pipelineId,
+  pipelineReport,
+  candidateDisplayName,
+  baseReport,
+  teamFit,
+  githubDeep,
+}: {
+  parentCheckId: string;
+  pipelineId?: string;
+  pipelineReport: SingleStepReport;
+  candidateDisplayName?: string | null;
+  baseReport: FullReport | null;
+  teamFit: TeamFitReport | null;
+  githubDeep: GitHubDeepScanReport | null;
+}) {
+  const rows: SummaryTabRow[] = [];
+
+  // 1. Базовая проверка
+  if (baseReport) {
+    const vb = verdictBadgeBase(baseReport.verdict);
+    rows.push({
+      key: "base",
+      title: "Базовая проверка",
+      icon: ShieldCheck,
+      available: true,
+      primary: `${vb.label} · ${baseReport.totalScore}/100`,
+      secondary: `риски ${baseReport.riskScore} · инфляция ${baseReport.inflationScore} · волки ${baseReport.wolvesScore}`,
+      tone: baseReport.verdict,
+    });
+  } else {
+    rows.push({
+      key: "base",
+      title: "Базовая проверка",
+      icon: ShieldCheck,
+      available: false,
+      primary: "—",
+      secondary: "данные не загружены",
+      tone: "neutral",
+    });
+  }
+
+  // 2. Пайплайн
+  const rb = resolutionBadge(pipelineReport.resolution.code);
+  const pipeTone: SummaryTabRow["tone"] =
+    pipelineReport.resolution.code === "RECOMMENDED" ? "green" :
+    pipelineReport.resolution.code === "NOT_RECOMMENDED" ? "red" : "yellow";
+  rows.push({
+    key: "pipeline",
+    title: "Пайплайн AI",
+    icon: Layers,
+    available: true,
+    primary: `${rb.label} · ИБ ${pipelineReport.compositeScore}/100`,
+    secondary: `верификация, мотивация, лояльность${pipelineReport.linguisticAudit ? ", лингвистика" : ""}`,
+    tone: pipeTone,
+  });
+
+  // 3. Team Fit
+  if (teamFit) {
+    rows.push({
+      key: "teamfit",
+      title: "Team Fit",
+      icon: Users,
+      available: true,
+      primary: teamFit.dataInsufficient ? "Данных недостаточно" : `Кластер ${teamFit.mbtiCluster}`,
+      secondary: teamFit.summary?.slice(0, 120) || "поведенческий профиль и ценностный fit",
+      tone: teamFit.dataInsufficient ? "neutral" : "green",
+    });
+  } else {
+    rows.push({
+      key: "teamfit",
+      title: "Team Fit",
+      icon: Users,
+      available: false,
+      primary: "—",
+      secondary: "анализ не запускался",
+      tone: "neutral",
+    });
+  }
+
+  // 4. GitHub DeepScan
+  if (githubDeep) {
+    const flags = Array.isArray(githubDeep.riskFlags) ? githubDeep.riskFlags : [];
+    const highFlags = flags.filter((f: any) => f?.severity === "high").length;
+    const medFlags = flags.filter((f: any) => f?.severity === "medium").length;
+    const ghTone: SummaryTabRow["tone"] = highFlags > 0 ? "red" : medFlags > 0 ? "yellow" : "green";
+    rows.push({
+      key: "github",
+      title: "GitHub DeepScan",
+      icon: Github,
+      available: true,
+      primary: `@${githubDeep.login}`,
+      secondary: highFlags > 0 ? `риски high: ${highFlags}` : medFlags > 0 ? `риски medium: ${medFlags}` : "критических рисков нет",
+      tone: ghTone,
+    });
+  } else {
+    rows.push({
+      key: "github",
+      title: "GitHub DeepScan",
+      icon: Github,
+      available: false,
+      primary: "—",
+      secondary: "анализ не запускался",
+      tone: "neutral",
+    });
+  }
+
+  const decision = aggregateFinalDecision({
+    base: baseReport,
+    pipeline: pipelineReport,
+    teamFit,
+    github: githubDeep,
+  });
+
+  const decisionTone =
+    decision.tone === "green"
+      ? { border: "border-emerald-500/50", bg: "bg-emerald-500/5", text: "text-emerald-200", icon: CheckCircle2, iconCls: "text-emerald-400" }
+      : decision.tone === "yellow"
+      ? { border: "border-amber-500/50", bg: "bg-amber-500/5", text: "text-amber-200", icon: AlertTriangle, iconCls: "text-amber-400" }
+      : { border: "border-red-500/50", bg: "bg-red-500/5", text: "text-red-200", icon: XCircle, iconCls: "text-red-400" };
+  const DecisionIcon = decisionTone.icon;
+
+  const handleDownloadAll = () => {
+    const html = buildCombinedReportHtml({
+      candidateName: candidateDisplayName || pipelineReport.candidateName || baseReport?.candidateName || "Кандидат",
+      parentCheckId,
+      pipelineId,
+      baseReport,
+      pipelineReport,
+      teamFit,
+      githubDeep,
+      decision,
+    });
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const safeName = (candidateDisplayName || baseReport?.candidateName || "кандидат").replace(/[^\p{L}\p{N}_-]+/gu, "_");
+    a.href = url;
+    a.download = `bot-sbshnik-досье-${safeName}-${parentCheckId}.html`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  return (
+    <Card
+      className="border-card-border bg-gradient-to-br from-background via-background to-primary/5 p-5"
+      data-testid="card-candidate-dossier-summary"
+    >
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2">
+          <Layers className="h-4 w-4 text-primary" />
+          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            Сводка по карточке кандидата
+          </div>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleDownloadAll}
+          className="print:hidden"
+          data-testid="button-download-all-reports"
+        >
+          <Download className="mr-2 h-3.5 w-3.5" />
+          Скачать все отчёты одним файлом
+        </Button>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {rows.map((row) => {
+          const RIcon = row.icon;
+          return (
+            <div
+              key={row.key}
+              className={`flex items-start gap-2 rounded-md border p-2.5 ${toneClasses(row.tone)} ${!row.available ? "opacity-60" : ""}`}
+              data-testid={`summary-row-${row.key}`}
+            >
+              <RIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <div className="flex-1 text-xs">
+                <div className="font-mono text-[9px] uppercase tracking-widest opacity-70">
+                  {row.title}
+                </div>
+                <div className="mt-0.5 font-medium">{row.primary}</div>
+                <div className="mt-0.5 text-[11px] opacity-80">{row.secondary}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Итоговое решение по своду всех вкладок */}
+      <div className={`mt-4 rounded-md border p-3 ${decisionTone.border} ${decisionTone.bg}`}>
+        <div className="flex items-center gap-2">
+          <DecisionIcon className={`h-4 w-4 ${decisionTone.iconCls}`} />
+          <div className={`font-mono text-[10px] uppercase tracking-widest ${decisionTone.text}`}>
+            Итоговое решение по всем вкладкам
+          </div>
+        </div>
+        <div className={`mt-1.5 text-sm font-semibold ${decisionTone.text}`} data-testid="text-final-headline">
+          {decision.headline}
+        </div>
+        <p className={`mt-1 text-xs ${decisionTone.text} opacity-90`}>{decision.paragraph}</p>
+        <ul className="mt-2 space-y-0.5 text-[11px] opacity-80">
+          {decision.bullets.map((b, i) => (
+            <li key={i}>• {b}</li>
+          ))}
+        </ul>
+      </div>
+    </Card>
+  );
+}
+
+// ==========================================================
+// Генерация единого HTML-отчёта по карточке
+// ==========================================================
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildCombinedReportHtml(opts: {
+  candidateName: string;
+  parentCheckId: string;
+  pipelineId?: string;
+  baseReport: FullReport | null;
+  pipelineReport: SingleStepReport;
+  teamFit: TeamFitReport | null;
+  githubDeep: GitHubDeepScanReport | null;
+  decision: { tone: "green" | "yellow" | "red"; headline: string; paragraph: string; bullets: string[] };
+}): string {
+  const { candidateName, parentCheckId, pipelineId, baseReport, pipelineReport, teamFit, githubDeep, decision } = opts;
+  const now = new Date().toLocaleString("ru-RU");
+
+  const section = (title: string, inner: string) =>
+    `<section><h2>${escapeHtml(title)}</h2>${inner}</section>`;
+
+  const baseHtml = baseReport
+    ? section(
+        "1. Базовая проверка",
+        `<p><b>Вердикт:</b> ${escapeHtml(verdictBadgeBase(baseReport.verdict).label)} · <b>суммарный балл:</b> ${baseReport.totalScore}/100</p>
+         <ul>
+           <li>Риски: ${baseReport.riskScore}/100</li>
+           <li>Инфляция: ${baseReport.inflationScore}/100</li>
+           <li>Волки: ${baseReport.wolvesScore}/100</li>
+         </ul>
+         ${baseReport.executiveSummary ? `<p><b>Сводка:</b> ${escapeHtml(baseReport.executiveSummary)}</p>` : ""}
+         ${baseReport.positiveSignals && baseReport.positiveSignals.length > 0
+            ? `<p><b>Положительные сигналы:</b></p><ul>${baseReport.positiveSignals.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`
+            : ""}
+         ${baseReport.redFlags && baseReport.redFlags.length > 0
+            ? `<p><b>Красные флаги:</b></p><ul>${baseReport.redFlags.map((f: any) => `<li>${escapeHtml(f.title || f.category || "флаг")}: ${escapeHtml(f.explanation || "")}</li>`).join("")}</ul>`
+            : ""}`,
+      )
+    : section("1. Базовая проверка", "<p><i>Данные не загружены.</i></p>");
+
+  const pipelineHtml = section(
+    "2. Пайплайн AI-скрининга",
+    `<p><b>Резолюция:</b> ${escapeHtml(resolutionBadge(pipelineReport.resolution.code).label)} · <b>Интегральный балл:</b> ${pipelineReport.compositeScore}/100</p>
+     <p><b>Верификация:</b> ${escapeHtml(pipelineReport.verification.summary)}</p>
+     ${pipelineReport.motivation ? `<p><b>Мотивация:</b> ${pipelineReport.motivation.score}/100 — ${escapeHtml(pipelineReport.motivation.summary || "")}</p>` : ""}
+     ${pipelineReport.loyalty ? `<p><b>Лояльность (ИПЛ):</b> ${pipelineReport.loyalty.score}/100 — ${escapeHtml(pipelineReport.loyalty.summary || "")}</p>` : ""}
+     ${pipelineReport.linguisticAudit ? `<p><b>Лингвистический аудит:</b> ${escapeHtml(pipelineReport.linguisticAudit.verdict)} — ${escapeHtml(pipelineReport.linguisticAudit.summary || "")}</p>` : ""}
+     ${pipelineReport.executiveSummary ? `<p><b>Сводка для руководителя:</b> ${escapeHtml(pipelineReport.executiveSummary.paragraph)}</p>` : ""}`,
+  );
+
+  const teamFitHtml = teamFit
+    ? section(
+        "3. Team Fit",
+        `<p><b>Кластер MBTI:</b> ${escapeHtml(teamFit.mbtiCluster)} — ${escapeHtml(teamFit.mbtiReasoning || "")}</p>
+         <p><b>Сводка:</b> ${escapeHtml(teamFit.summary || "")}</p>
+         ${teamFit.dataInsufficient ? "<p><i>Отмечена недостаточность данных для устойчивой кластеризации.</i></p>" : ""}`,
+      )
+    : section("3. Team Fit", "<p><i>Анализ не запускался.</i></p>");
+
+  const githubHtml = githubDeep
+    ? section(
+        "4. GitHub DeepScan",
+        `<p><b>Профиль:</b> @${escapeHtml(githubDeep.login)}</p>
+         <p><b>Сводка:</b> ${escapeHtml((githubDeep as any).summary || "")}</p>
+         ${(githubDeep as any).riskFlags && Array.isArray((githubDeep as any).riskFlags) && (githubDeep as any).riskFlags.length > 0
+            ? `<p><b>Флаги риска:</b></p><ul>${(githubDeep as any).riskFlags.map((f: any) => `<li>[${escapeHtml(f.severity || "")}] ${escapeHtml(f.type || "")} — ${escapeHtml(f.evidence || "")}</li>`).join("")}</ul>`
+            : ""}`,
+      )
+    : section("4. GitHub DeepScan", "<p><i>Анализ не запускался.</i></p>");
+
+  const decisionColor =
+    decision.tone === "green" ? "#10b981" : decision.tone === "yellow" ? "#f59e0b" : "#ef4444";
+
+  const decisionHtml = `
+    <section class="decision" style="border-left: 4px solid ${decisionColor};">
+      <h2>Итоговое решение по всем вкладкам</h2>
+      <p style="font-size:16px;font-weight:600;color:${decisionColor};">${escapeHtml(decision.headline)}</p>
+      <p>${escapeHtml(decision.paragraph)}</p>
+      <ul>${decision.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>
+    </section>
+  `;
+
+  return `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Досье кандидата — ${escapeHtml(candidateName)}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; max-width: 820px; margin: 40px auto; padding: 0 24px; color: #0f172a; line-height: 1.55; }
+    header { border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 24px; }
+    h1 { margin: 0 0 4px; font-size: 22px; }
+    .meta { color: #64748b; font-size: 12px; }
+    h2 { font-size: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-top: 28px; }
+    section { margin-bottom: 18px; }
+    section.decision { background: #f8fafc; padding: 14px 18px; border-radius: 6px; }
+    ul { padding-left: 20px; }
+    li { margin-bottom: 3px; }
+    code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+    @media print { body { margin: 0; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Досье кандидата: ${escapeHtml(candidateName)}</h1>
+    <div class="meta">
+      Базовая проверка №${escapeHtml(parentCheckId)}${pipelineId ? ` · Пайплайн №${escapeHtml(pipelineId)}` : ""} · Сформировано ${escapeHtml(now)}
+    </div>
+  </header>
+  ${decisionHtml}
+  ${baseHtml}
+  ${pipelineHtml}
+  ${teamFitHtml}
+  ${githubHtml}
+  <footer class="meta" style="margin-top:36px; border-top:1px solid #e2e8f0; padding-top:10px;">
+    Отчёт сформирован автоматически системой bot-sbshnik. Не заменяет решение СБ.
+  </footer>
+</body>
+</html>`;
+}
+
