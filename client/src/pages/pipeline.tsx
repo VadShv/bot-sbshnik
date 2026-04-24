@@ -116,6 +116,22 @@ function readFromCheckParam(): string | null {
 }
 
 export default function PipelinePage() {
+  return <PipelineRunner />;
+}
+
+// Встраиваемый вариант — используется во вкладке «Пайплайн» страницы отчёта.
+// parentCheckIdProp задаётся явно, Header и внешние отступы не рендерим.
+export function PipelineEmbed({ parentCheckId }: { parentCheckId: string }) {
+  return <PipelineRunner embedded parentCheckIdProp={parentCheckId} />;
+}
+
+function PipelineRunner({
+  embedded = false,
+  parentCheckIdProp,
+}: {
+  embedded?: boolean;
+  parentCheckIdProp?: string;
+}) {
   const { toast } = useToast();
   const [slots, setSlots] = useState<Record<SlotKey, SlotState>>({
     resume: emptySlot(),
@@ -136,7 +152,9 @@ export default function PipelinePage() {
   const [report, setReport] = useState<SingleStepReport | null>(null);
   const [reportId, setReportId] = useState<string | null>(null);
   const [savedPipelineId, setSavedPipelineId] = useState<string | null>(null);
-  const [parentCheckId, setParentCheckId] = useState<string | null>(() => readFromCheckParam());
+  const [parentCheckId, setParentCheckId] = useState<string | null>(
+    () => parentCheckIdProp ?? readFromCheckParam(),
+  );
   const [progress, setProgress] = useState<{
     verification: "idle" | "running" | "done";
     motivation: "idle" | "running" | "done";
@@ -159,11 +177,15 @@ export default function PipelinePage() {
   // и страница мгновенно уходит на главную. Вместо редиректа — показываем предупреждение и прячем кнопку запуска.
   // Повторная попытка прочитать hash, если первый рендер произошёл раньше, чем wouter обновил location.
   useEffect(() => {
+    if (parentCheckIdProp && parentCheckId !== parentCheckIdProp) {
+      setParentCheckId(parentCheckIdProp);
+      return;
+    }
     if (parentCheckId) return;
     const v = readFromCheckParam();
     if (v) setParentCheckId(v);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [parentCheckIdProp]);
 
   useEffect(() => {
     if (parentQuery.data && slots.resume.text.trim().length === 0) {
@@ -287,12 +309,20 @@ export default function PipelinePage() {
   const running = runMut.isPending || recomputeMut.isPending;
   const tooShort = slots.resume.text.trim().length < 100;
 
+  const Wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) =>
+    embedded ? (
+      <div data-testid="pipeline-embedded">{children}</div>
+    ) : (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="mx-auto max-w-6xl px-6 py-10">{children}</main>
+      </div>
+    );
+
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <main className="mx-auto max-w-6xl px-6 py-10">
-        {/* v3.3: Пайплайн доступен только из базовой проверки */}
-        {!parentCheckId && (
+    <Wrapper>
+        {/* v3.3: Пайплайн доступен только из базовой проверки — в embedded-режиме предупреждение не нужно */}
+        {!parentCheckId && !embedded && (
           <Card
             className="mb-4 border-amber-500/40 bg-amber-500/[0.06] p-4 text-sm"
             data-testid="card-no-parent-warning"
@@ -321,8 +351,8 @@ export default function PipelinePage() {
           </Card>
         )}
 
-        {/* Связь с исходной проверкой */}
-        {parentCheckId && (
+        {/* Связь с исходной проверкой — в embedded-режиме не нужно, контекст и так очевиден */}
+        {parentCheckId && !embedded && (
           <Card
             className="mb-4 border-primary/30 bg-primary/[0.04] p-3 flex flex-wrap items-center justify-between gap-2 text-xs"
             data-testid="card-parent-check-banner"
@@ -614,8 +644,7 @@ export default function PipelinePage() {
             <PipelineReport report={report} />
           </div>
         )}
-      </main>
-    </div>
+    </Wrapper>
   );
 }
 

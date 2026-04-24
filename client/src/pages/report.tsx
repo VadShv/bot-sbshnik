@@ -1,4 +1,5 @@
 import { useRoute, Link } from "wouter";
+import { PipelineEmbed } from "@/pages/pipeline";
 import { useQuery } from "@tanstack/react-query";
 import { Header } from "@/components/Header";
 import { Card } from "@/components/ui/card";
