@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -137,6 +137,7 @@ export default function PipelinePage() {
   const [reportId, setReportId] = useState<string | null>(null);
   const [savedPipelineId, setSavedPipelineId] = useState<string | null>(null);
   const [parentCheckId, setParentCheckId] = useState<string | null>(() => readFromCheckParam());
+  const [, setLocation] = useLocation();
   const [progress, setProgress] = useState<{
     verification: "idle" | "running" | "done";
     motivation: "idle" | "running" | "done";
@@ -153,6 +154,15 @@ export default function PipelinePage() {
     queryKey: ["/api/checks", parentCheckId],
     enabled: Boolean(parentCheckId),
   });
+
+  // v3.3: запуск пайплайна без базовой проверки запрещён.
+  // Если пришли на /pipeline без ?fromCheck= — на главную.
+  useEffect(() => {
+    if (!parentCheckId) {
+      setLocation("/");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parentCheckId]);
 
   useEffect(() => {
     if (parentQuery.data && slots.resume.text.trim().length === 0) {

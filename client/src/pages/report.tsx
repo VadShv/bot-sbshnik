@@ -3,10 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Header } from "@/components/Header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import { ScoreGauge } from "@/components/ScoreGauge";
 import { FindingCard } from "@/components/FindingCard";
 import { WolfReport } from "@/components/WolfReport";
+import { ChatTab } from "@/components/ChatTab";
 import {
   ArrowLeft,
   Download,
@@ -156,11 +158,34 @@ export default function ReportPage() {
           </div>
         </Card>
 
-        {/* Блок «Полный пайплайн» — кнопка запуска + список связанных отчётов */}
-        <Card
-          className="mb-6 border-primary/30 bg-primary/[0.04] p-5 print:hidden"
-          data-testid="card-pipeline-link"
-        >
+        {/* ============ 3 ВКЛАДКИ v3.3 ============ */}
+        <Tabs defaultValue="base" className="mb-4 print:hidden">
+          <TabsList className="grid w-full grid-cols-3 md:w-auto md:inline-grid">
+            <TabsTrigger value="base" data-testid="tab-base">
+              <ShieldAlert className="mr-1.5 h-3.5 w-3.5" />
+              Базовая проверка
+            </TabsTrigger>
+            <TabsTrigger value="pipeline" data-testid="tab-pipeline">
+              <Workflow className="mr-1.5 h-3.5 w-3.5" />
+              Пайплайн
+              {data.pipelines && data.pipelines.length > 0 && (
+                <span className="ml-1.5 rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-400">
+                  ×{data.pipelines.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="chat" data-testid="tab-chat">
+              <Bot className="mr-1.5 h-3.5 w-3.5" />
+              ИИ-ассистент
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ============ TAB 2: ПАЙПЛАЙН ============ */}
+          <TabsContent value="pipeline" className="mt-6">
+            <Card
+              className="border-primary/30 bg-primary/[0.04] p-5"
+              data-testid="card-pipeline-link"
+            >
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-start gap-3">
               <div className="rounded-md bg-primary/15 p-2 text-primary">
@@ -190,7 +215,7 @@ export default function ReportPage() {
             </Link>
           </div>
 
-          {data.pipelines && data.pipelines.length > 0 && (
+              {data.pipelines && data.pipelines.length > 0 && (
             <div className="mt-4 border-t border-primary/20 pt-4">
               <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                 Связанные отчёты пайплайна
@@ -223,8 +248,16 @@ export default function ReportPage() {
               </ul>
             </div>
           )}
-        </Card>
+            </Card>
+          </TabsContent>
 
+          {/* ============ TAB 3: ЧАТ ============ */}
+          <TabsContent value="chat" className="mt-6">
+            <ChatTab checkId={data.id} />
+          </TabsContent>
+
+          {/* ============ TAB 1: БАЗОВАЯ ПРОВЕРКА ============ */}
+          <TabsContent value="base" className="mt-6">
         {/* Red flags — топ-критичные сигналы */}
         {r.redFlags && r.redFlags.length > 0 && (
           <Card className="mb-6 border-red-500/30 bg-red-500/5 p-5">
@@ -433,6 +466,8 @@ export default function ReportPage() {
           (модель {`"yandexgpt"`}, folder b1gncpokmh18knpjgadr). Не является основанием
           для окончательного отказа — результат должен проверить сотрудник СБ.
         </div>
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );

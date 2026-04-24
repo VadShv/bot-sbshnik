@@ -302,44 +302,26 @@ export default function Home() {
           </div>
         </Card>
 
-        {/* ────────── CTA: Single-Step v3.0 — ПОД основным окном ────────── */}
-        <Link href="/pipeline">
-          <a
-            data-testid="link-cta-pipeline"
-            className="mt-6 block rounded-lg border-2 border-primary/40 bg-gradient-to-r from-primary/10 via-primary/5 to-background p-5 transition-all hover:border-primary hover:shadow-[0_0_0_1px_hsl(var(--primary)/0.3)]"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-primary">
-                  🎯 Single-Step v3.0 · Единый пайплайн
-                </div>
-                <div className="text-lg font-bold">Нужен полный скрининг — в один клик?</div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Резюме + ЭТК СФР + заметки интервью + форма рекрутера → 4 модуля (верификация,
-                  мотивация, Cultural Fit, лояльность) → Composite Score → одна из 5 резолюций.
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {[
-                    "🗂️ Верификация по ЭТК",
-                    "🤝 3 ценности",
-                    "📈 ILS = 0.40·H + 0.35·R + 0.25·L",
-                    "✅ 5 резолюций",
-                  ].map((t) => (
-                    <span
-                      key={t}
-                      className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] text-primary"
-                    >
-                      {t}
-                    </span>
-                  ))}
-                </div>
+        {/* ────────── v3.3 Подсказка про пайплайн (только инфо, без ссылки) ────────── */}
+        <div
+          data-testid="cta-pipeline-hint"
+          className="mt-6 block rounded-lg border border-border bg-muted/20 p-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                🎯 Single-Step v3.3 · Единый пайплайн
               </div>
-              <div className="shrink-0 rounded-md border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary">
-                Открыть пайплайн →
+              <div className="text-sm font-semibold">
+                Пайплайн запускается только из готовой базовой проверки
               </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Сделайте обычную проверку резюме выше → откройте отчёт → вкладка «Пайплайн».
+                Там же доступна 3-я вкладка «ИИ-ассистент» — задавайте вопросы в контексте отчётов.
+              </p>
             </div>
-          </a>
-        </Link>
+          </div>
+        </div>
 
         {/* ════════ НИЖНИЕ БЛОКИ: категории сигналов — компактные, свёрнутые ════════ */}
         <div className="mt-10">

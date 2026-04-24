@@ -1,13 +1,15 @@
-import { checks, pipelineChecks } from "@shared/schema";
+import { checks, pipelineChecks, chatMessages } from "@shared/schema";
 import type {
   Check,
   InsertCheck,
   PipelineCheck,
   InsertPipelineCheck,
+  ChatMessage,
+  InsertChatMessage,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
-import { eq, desc } from "drizzle-orm";
+import { eq, asc, desc } from "drizzle-orm";
 import path from "path";
 import fs from "fs";
 
@@ -52,6 +54,15 @@ sqlite.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_pipeline_created ON pipeline_checks(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_pipeline_parent ON pipeline_checks(parent_id);
+  CREATE TABLE IF NOT EXISTS chat_messages (
+    id TEXT PRIMARY KEY,
+    parent_check_id TEXT NOT NULL,
+    pipeline_check_id TEXT,
+    created_at INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_chat_parent ON chat_messages(parent_check_id, created_at ASC);
 `);
 
 export const db = drizzle(sqlite);
@@ -69,6 +80,10 @@ export interface IStorage {
   listPipelinesByParent(parentId: string): Promise<PipelineCheck[]>;
   listPipelinesByParentIds(parentIds: string[]): Promise<PipelineCheck[]>;
   deletePipelineCheck(id: string): Promise<void>;
+  // Чат v3.3
+  appendChatMessage(msg: InsertChatMessage): Promise<ChatMessage>;
+  listChatMessages(parentCheckId: string, limit?: number): Promise<ChatMessage[]>;
+  deleteChatByParent(parentCheckId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -118,6 +133,21 @@ export class DatabaseStorage implements IStorage {
   }
   async deletePipelineCheck(id: string): Promise<void> {
     db.delete(pipelineChecks).where(eq(pipelineChecks.id, id)).run();
+  }
+  async appendChatMessage(msg: InsertChatMessage): Promise<ChatMessage> {
+    return db.insert(chatMessages).values(msg).returning().get();
+  }
+  async listChatMessages(parentCheckId: string, limit = 200): Promise<ChatMessage[]> {
+    return db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.parentCheckId, parentCheckId))
+      .orderBy(asc(chatMessages.createdAt))
+      .limit(limit)
+      .all();
+  }
+  async deleteChatByParent(parentCheckId: string): Promise<void> {
+    db.delete(chatMessages).where(eq(chatMessages.parentCheckId, parentCheckId)).run();
   }
 }
 

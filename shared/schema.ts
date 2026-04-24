@@ -20,6 +20,20 @@ export const insertCheckSchema = createInsertSchema(checks);
 export type InsertCheck = z.infer<typeof insertCheckSchema>;
 export type Check = typeof checks.$inferSelect;
 
+// --- Чат в контексте отчёта (v3.3) ---
+export const chatMessages = sqliteTable("chat_messages", {
+  id: text("id").primaryKey(),
+  parentCheckId: text("parent_check_id").notNull(), // checks.id
+  pipelineCheckId: text("pipeline_check_id"),       // pipeline_checks.id (optional)
+  createdAt: integer("created_at").notNull(),
+  role: text("role").notNull(),                     // 'user' | 'assistant'
+  content: text("content").notNull(),
+});
+
+export const insertChatMessageSchema = createInsertSchema(chatMessages);
+export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
+export type ChatMessage = typeof chatMessages.$inferSelect;
+
 // --- Типы отчёта ---
 export type Severity = "low" | "medium" | "high" | "critical";
 
@@ -669,7 +683,7 @@ export type LinguisticAudit = {
 
 // --- Итоговый отчёт пайплайна ---
 export type SingleStepReport = {
-  version: "3.2";
+  version: "3.3";
   candidateName: string | null;
   createdAt: number;
   recruiterForm: RecruiterForm;

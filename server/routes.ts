@@ -4,8 +4,9 @@ import multer from "multer";
 import { nanoid } from "nanoid";
 import { storage } from "./storage";
 import { runDetectors, aggregateCategoryScore } from "./detectors";
-import { yandexAnalyze } from "./yandex";
+import { yandexAnalyze, yandexComplete } from "./yandex";
 import { runWolfAudit } from "./wolfDetector";
+import { stripPhantomText } from "./pipelineAnalyzer";
 import type {
   Finding,
   FullReport,
@@ -560,11 +561,19 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
       const nEtk = normalizeEtk(etk);
       // parentCheckId — связь с исходной обычной проверкой (checks.id)
-      let parentId: string | undefined;
-      if (typeof parentCheckId === "string" && parentCheckId.trim()) {
-        const parent = await storage.getCheck(parentCheckId.trim());
-        if (parent) parentId = parent.id;
+      // С v3.3 пайплайн создаётся ТОЛЬКО на базе существующей базовой проверки.
+      if (typeof parentCheckId !== "string" || !parentCheckId.trim()) {
+        return res.status(400).json({
+          message: "Пайплайн можно создать только на базе существующей базовой проверки (parentCheckId обязателен).",
+        });
       }
+      const parent = await storage.getCheck(parentCheckId.trim());
+      if (!parent) {
+        return res.status(400).json({
+          message: "Базовая проверка не найдена. Сначала выполните обычную проверку резюме.",
+        });
+      }
+      const parentId: string = parent.id;
       const result = await doPipelineAnalyze({
         resumeText,
         etk: nEtk,
@@ -632,6 +641,150 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch (e: any) {
       console.error("Pipeline recompute error:", e);
       res.status(500).json({ message: e.message || "Ошибка пересчёта" });
+    }
+  });
+
+  // ==========================================================
+  // CHAT v3.3 — ИИ-ассистент в контексте базовой проверки + пайплайна
+  // ==========================================================
+
+  // GET история чата по id базовой проверки
+  app.get("/api/checks/:id/chat", async (req, res) => {
+    try {
+      const c = await storage.getCheck(req.params.id);
+      if (!c) return res.status(404).json({ message: "Базовая проверка не найдена" });
+      const messages = await storage.listChatMessages(c.id);
+      res.json({
+        messages: messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          createdAt: m.createdAt,
+        })),
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // POST новое сообщение — вызывает LLM в контексте базовой проверки + последнего пайплайна
+  app.post("/api/checks/:id/chat/message", async (req, res) => {
+    try {
+      const baseCheck = await storage.getCheck(req.params.id);
+      if (!baseCheck) return res.status(404).json({ message: "Базовая проверка не найдена" });
+
+      const userText = String(req.body?.message || "").trim();
+      if (!userText || userText.length > 4000) {
+        return res.status(400).json({
+          message: "Сообщение должно содержать от 1 до 4000 символов.",
+        });
+      }
+
+      // Собираем контекст: базовый отчёт + последний пайплайн (если есть)
+      const baseReport = JSON.parse(baseCheck.reportJson) as FullReport;
+      const pipelines = await storage.listPipelinesByParent(baseCheck.id);
+      const lastPipeline = pipelines[0]; // сортировка desc(created_at) уже на стороне ХРАНИЛИЩА
+      const pipelineReport = lastPipeline
+        ? (JSON.parse(lastPipeline.reportJson) as SingleStepReport)
+        : null;
+
+      // Компактный JSON срез отчётов (чтобы не перегружать контекст)
+      const baseSlim = {
+        candidateName: baseReport.candidateName,
+        verdict: baseReport.verdict,
+        totalScore: baseReport.totalScore,
+        executiveSummary: baseReport.executiveSummary,
+        risks: { score: baseReport.risks.score, summary: baseReport.risks.summary, findings: baseReport.risks.findings.slice(0, 10).map((f) => ({ title: f.title, severity: f.severity, description: f.description })) },
+        inflation: { score: baseReport.inflation.score, summary: baseReport.inflation.summary, findings: baseReport.inflation.findings.slice(0, 10).map((f) => ({ title: f.title, severity: f.severity, description: f.description })) },
+        wolves: { score: baseReport.wolves.score, summary: baseReport.wolves.summary, findings: baseReport.wolves.findings.slice(0, 10).map((f) => ({ title: f.title, severity: f.severity, description: f.description })) },
+        redFlags: baseReport.redFlags?.slice(0, 8),
+        positiveSignals: baseReport.positiveSignals?.slice(0, 8),
+      };
+      const pipelineSlim = pipelineReport
+        ? {
+            version: pipelineReport.version,
+            candidateName: pipelineReport.candidateName,
+            compositeScore: pipelineReport.compositeScore,
+            resolution: pipelineReport.resolution,
+            verification: pipelineReport.verification,
+            motivation: pipelineReport.motivation,
+            culturalFit: pipelineReport.culturalFit,
+            loyalty: pipelineReport.loyalty,
+            linguisticAudit: pipelineReport.linguisticAudit,
+          }
+        : null;
+
+      const systemPrompt = [
+        "Ты — ассистент службы безопасности по имени bot-sbshnik.",
+        "Отвечай СТРОГО на основании двух отчётов ниже (базовая проверка + пайплайн, если есть). Не выдумывай факты.",
+        "Если в отчётах нет ответа на вопрос — прямо скажи: «информация не найдена в отчёте» и предложи шаг верификации.",
+        "ЗАПРЕЩЕНО утверждать «компания не существует/не зарегистрирована/фиктивна/ликвидирована/сайт не открывается/иНН не найден/пустышка». У тебя нет доступа к Реестрам (ЕГРЮЛ/ИНН) и к сайтам. Единственный допустимый статус: «Информация не найдена», + рекомендуй ручную проверку через ЕГРЮЛ/rusprofile.ru.",
+        "Стиль: лаконично, профессионально, на русском. Можно markdown для списков.",
+        "",
+        "=== БАЗОВЫЙ ОТЧЁТ (JSON) ===",
+        JSON.stringify(baseSlim),
+        "",
+        pipelineSlim
+          ? "=== ПАЙПЛАЙН (JSON) ===\n" + JSON.stringify(pipelineSlim)
+          : "=== ПАЙПЛАЙН не создан ===",
+      ].join("\n");
+
+      // Загружаем последние сообщения из базы для непрерывного диалога (макс 16)
+      const history = await storage.listChatMessages(baseCheck.id, 200);
+      const tail = history.slice(-16);
+
+      const messages: Array<{ role: "system" | "user" | "assistant"; text: string }> = [
+        { role: "system", text: systemPrompt },
+        ...tail.map((m) => ({
+          role: (m.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+          text: m.content,
+        })),
+        { role: "user", text: userText },
+      ];
+
+      let assistantRaw = "";
+      try {
+        assistantRaw = await yandexComplete(messages, { temperature: 0.3, maxTokens: 1500 });
+      } catch (e: any) {
+        return res.status(502).json({ message: "LLM недоступен: " + (e?.message || "ошибка") });
+      }
+      const assistantText = stripPhantomText(assistantRaw) || assistantRaw;
+
+      const now = Date.now();
+      const userMsg = await storage.appendChatMessage({
+        id: nanoid(10),
+        parentCheckId: baseCheck.id,
+        pipelineCheckId: lastPipeline?.id ?? null,
+        createdAt: now,
+        role: "user",
+        content: userText,
+      });
+      const asstMsg = await storage.appendChatMessage({
+        id: nanoid(10),
+        parentCheckId: baseCheck.id,
+        pipelineCheckId: lastPipeline?.id ?? null,
+        createdAt: now + 1,
+        role: "assistant",
+        content: assistantText,
+      });
+
+      res.json({
+        user: { id: userMsg.id, role: userMsg.role, content: userMsg.content, createdAt: userMsg.createdAt },
+        assistant: { id: asstMsg.id, role: asstMsg.role, content: asstMsg.content, createdAt: asstMsg.createdAt },
+      });
+    } catch (e: any) {
+      console.error("Chat message error:", e);
+      res.status(500).json({ message: e.message || "Ошибка чата" });
+    }
+  });
+
+  // DELETE — очистка истории чата (по id базовой проверки)
+  app.delete("/api/checks/:id/chat", async (req, res) => {
+    try {
+      await storage.deleteChatByParent(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
     }
   });
 
