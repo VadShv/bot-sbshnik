@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -137,7 +137,6 @@ export default function PipelinePage() {
   const [reportId, setReportId] = useState<string | null>(null);
   const [savedPipelineId, setSavedPipelineId] = useState<string | null>(null);
   const [parentCheckId, setParentCheckId] = useState<string | null>(() => readFromCheckParam());
-  const [, setLocation] = useLocation();
   const [progress, setProgress] = useState<{
     verification: "idle" | "running" | "done";
     motivation: "idle" | "running" | "done";
@@ -155,14 +154,16 @@ export default function PipelinePage() {
     enabled: Boolean(parentCheckId),
   });
 
-  // v3.3: запуск пайплайна без базовой проверки запрещён.
-  // Если пришли на /pipeline без ?fromCheck= — на главную.
+  // v3.3: запуск пайплайна без базовой проверки запрещён на уровне бэкенда (POST /api/pipeline/analyze вернёт 400).
+  // На фронте НЕ редиректим, иначе при hash-навигации с ?fromCheck=... есть гонка инициализации
+  // и страница мгновенно уходит на главную. Вместо редиректа — показываем предупреждение и прячем кнопку запуска.
+  // Повторная попытка прочитать hash, если первый рендер произошёл раньше, чем wouter обновил location.
   useEffect(() => {
-    if (!parentCheckId) {
-      setLocation("/");
-    }
+    if (parentCheckId) return;
+    const v = readFromCheckParam();
+    if (v) setParentCheckId(v);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parentCheckId]);
+  }, []);
 
   useEffect(() => {
     if (parentQuery.data && slots.resume.text.trim().length === 0) {
@@ -290,6 +291,36 @@ export default function PipelinePage() {
     <div className="min-h-screen bg-background">
       <Header />
       <main className="mx-auto max-w-6xl px-6 py-10">
+        {/* v3.3: Пайплайн доступен только из базовой проверки */}
+        {!parentCheckId && (
+          <Card
+            className="mb-4 border-amber-500/40 bg-amber-500/[0.06] p-4 text-sm"
+            data-testid="card-no-parent-warning"
+          >
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" />
+              <div className="space-y-2">
+                <div className="font-semibold text-amber-200">
+                  Пайплайн недоступен без базовой проверки
+                </div>
+                <div className="text-muted-foreground">
+                  Полный AI-скрининг запускается только из карточки уже проведённой базовой проверки.
+                  Откройте репорт проверки и на вкладке «Пайплайн» нажмите «Провести полный пайплайн».
+                </div>
+                <Link href="/">
+                  <a
+                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                    data-testid="link-go-home"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Перейти на главную и запустить базовую проверку
+                  </a>
+                </Link>
+              </div>
+            </div>
+          </Card>
+        )}
+
         {/* Связь с исходной проверкой */}
         {parentCheckId && (
           <Card
@@ -514,7 +545,7 @@ export default function PipelinePage() {
               <Button
                 size="lg"
                 onClick={() => runMut.mutate()}
-                disabled={running || tooShort}
+                disabled={running || tooShort || !parentCheckId}
                 data-testid="button-run-pipeline"
               >
                 {runMut.isPending ? (
