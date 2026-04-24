@@ -182,75 +182,52 @@ export default function ReportPage() {
             </TabsTrigger>
           </TabsList>
 
-          {/* ============ TAB 2: ПАЙПЛАЙН ============ */}
+          {/* ============ TAB 2: ПАЙПЛАЙН (встроенный интерфейс) ============ */}
           <TabsContent value="pipeline" className="mt-6">
-            <Card
-              className="border-primary/30 bg-primary/[0.04] p-5"
-              data-testid="card-pipeline-link"
-            >
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-start gap-3">
-              <div className="rounded-md bg-primary/15 p-2 text-primary">
-                <Workflow className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-mono text-[10px] uppercase tracking-widest text-primary">
-                  Полный скрининг · Single-Step v3.0
+            {/* Список уже проведённых пайплайнов (если есть) */}
+            {data.pipelines && data.pipelines.length > 0 && (
+              <Card
+                className="mb-4 border-primary/30 bg-primary/[0.04] p-4"
+                data-testid="card-pipeline-history"
+              >
+                <div className="mb-3 flex items-center gap-2">
+                  <Workflow className="h-4 w-4 text-primary" />
+                  <div className="font-semibold">Связанные отчёты пайплайна</div>
+                  <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    предыдущие запуски
+                  </div>
                 </div>
-                <div className="mt-1 text-sm font-semibold">
-                  {data.pipelines && data.pipelines.length > 0
-                    ? "Проведён полный пайплайн по этому кандидату"
-                    : "Нужна более глубокая проверка?"}
-                </div>
-                <div className="mt-1 max-w-xl text-xs text-muted-foreground">
-                  Верификация опыта (Резюме × ЭТК × интервью × рекомендации), анализ мотивации, Cultural Fit V3 и Индекс лояльности. Результат — Composite Score и финальная резолюция.
-                </div>
-              </div>
-            </div>
-            <Link href={`/pipeline?fromCheck=${data.id}`}>
-              <Button size="lg" data-testid="button-run-pipeline-from-check">
-                <Workflow className="mr-2 h-4 w-4" />
-                {data.pipelines && data.pipelines.length > 0
-                  ? "Провести пайплайн ещё раз"
-                  : "Провести полный пайплайн"}
-              </Button>
-            </Link>
-          </div>
+                <ul className="space-y-2">
+                  {data.pipelines.map((p) => (
+                    <li key={p.id}>
+                      <Link href={`/pipeline-report/${p.id}`}>
+                        <a
+                          className="group flex items-center justify-between gap-3 rounded-md border border-card-border bg-background/60 px-3 py-2 hover:border-primary/50 hover:bg-background"
+                          data-testid={`link-pipeline-${p.id}`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-semibold text-sm">Отчёт пайплайна №{p.id}</span>
+                              <ResolutionPill code={p.resolutionCode} />
+                              <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                                v{p.version} · CS {p.compositeScore}
+                              </span>
+                            </div>
+                            <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                              {new Date(p.createdAt).toLocaleString("ru-RU")}
+                            </div>
+                          </div>
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary" />
+                        </a>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
 
-              {data.pipelines && data.pipelines.length > 0 && (
-            <div className="mt-4 border-t border-primary/20 pt-4">
-              <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                Связанные отчёты пайплайна
-              </div>
-              <ul className="space-y-2">
-                {data.pipelines.map((p) => (
-                  <li key={p.id}>
-                    <Link href={`/pipeline-report/${p.id}`}>
-                      <a
-                        className="group flex items-center justify-between gap-3 rounded-md border border-card-border bg-background/60 px-3 py-2 hover:border-primary/50 hover:bg-background"
-                        data-testid={`link-pipeline-${p.id}`}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-semibold text-sm">Отчёт пайплайна №{p.id}</span>
-                            <ResolutionPill code={p.resolutionCode} />
-                            <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                              v{p.version} · CS {p.compositeScore}
-                            </span>
-                          </div>
-                          <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-                            {new Date(p.createdAt).toLocaleString("ru-RU")}
-                          </div>
-                        </div>
-                        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary" />
-                      </a>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-            </Card>
+            {/* Встроенный полный интерфейс пайплайна с уже подгруженным резюме */}
+            <PipelineEmbed parentCheckId={data.id} />
           </TabsContent>
 
           {/* ============ TAB 3: ЧАТ ============ */}
