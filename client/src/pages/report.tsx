@@ -298,7 +298,6 @@ export default function ReportPage() {
 
         {/* Три интегральные категории */}
         <CollapsibleSection
-          defaultOpen
           icon={<Target className="h-4 w-4 text-primary" />}
           title="Скоры по категориям"
           meta="риски · накрутка · волки"
@@ -626,7 +625,7 @@ function CategorySection({
   cat: FullReport["risks"];
   accent: string;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const color =
     cat.score >= 61
       ? "hsl(0 72% 55%)"
