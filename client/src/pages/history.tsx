@@ -54,82 +54,134 @@ export default function History() {
           </Card>
         )}
 
-        <div className="space-y-2">
-          {(data || []).map((c) => (
-            <Card
-              key={c.id}
-              className="border-card-border bg-card p-4"
-              data-testid={`row-check-${c.id}`}
+        {!isLoading && data && data.length > 0 && (
+          <div className="space-y-2">
+            {/* Шапка колонок — видна только на md+ */}
+            <div
+              className="hidden md:grid grid-cols-[minmax(0,1fr)_72px_72px_72px_72px_40px] items-end gap-4 px-4 pb-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground"
+              data-testid="row-history-header"
             >
-              <div className="flex items-center justify-between gap-4">
-                <Link href={`/report/${c.id}`}>
-                  <a className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="font-semibold truncate">
-                        {c.candidateName || "Без ФИО"}
-                      </div>
-                      <VerdictBadge verdict={c.verdict} size="sm" />
-                      {c.hasPipeline && (
-                        <span
-                          className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-emerald-400"
-                          data-testid={`badge-has-pipeline-${c.id}`}
-                          title={
-                            c.pipelineCount && c.pipelineCount > 1
-                              ? `Проведён полный пайплайн × ${c.pipelineCount}`
-                              : "Проведён полный пайплайн"
-                          }
-                        >
-                          <Workflow className="h-3 w-3" />
-                          +пайплайн
-                          {c.pipelineCount && c.pipelineCount > 1 ? ` ×${c.pipelineCount}` : ""}
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-1 font-mono text-xs text-muted-foreground">
-                      {new Date(c.createdAt).toLocaleString("ru-RU")} · №{c.id}
-                    </div>
-                  </a>
-                </Link>
-                <div className="hidden gap-4 md:flex">
-                  <ScoreCell v={c.riskScore} l="Риск" />
-                  <ScoreCell v={c.inflationScore} l="Накрутка" />
-                  <ScoreCell v={c.wolvesScore} l="Волки" />
-                  <ScoreCell v={c.totalScore} l="Итог" bold />
+              <div>Кандидат</div>
+              <div className="text-right">Риск</div>
+              <div className="text-right">Накрутка</div>
+              <div className="text-right">Волки</div>
+              <div className="text-right">Итог</div>
+              <div></div>
+            </div>
+
+            {(data || []).map((c) => (
+              <Card
+                key={c.id}
+                className="border-card-border bg-card p-4"
+                data-testid={`row-check-${c.id}`}
+              >
+                {/* Mobile-fallback (< md): колонка инфо + показатели снизу */}
+                <div className="md:hidden">
+                  <div className="flex items-start justify-between gap-3">
+                    <Link href={`/report/${c.id}`}>
+                      <a className="min-w-0 flex-1">
+                        <CandidateInfo c={c} />
+                      </a>
+                    </Link>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="flex-shrink-0"
+                      onClick={() => {
+                        if (confirm("Удалить проверку?")) del.mutate(c.id);
+                      }}
+                      data-testid={`button-delete-${c.id}`}
+                    >
+                      <Trash2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+                  <div className="mt-3 grid grid-cols-4 gap-2">
+                    <ScoreCell v={c.riskScore} l="Риск" />
+                    <ScoreCell v={c.inflationScore} l="Накрутка" />
+                    <ScoreCell v={c.wolvesScore} l="Волки" />
+                    <ScoreCell v={c.totalScore} l="Итог" bold />
+                  </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => {
-                    if (confirm("Удалить проверку?")) del.mutate(c.id);
-                  }}
-                  data-testid={`button-delete-${c.id}`}
-                >
-                  <Trash2 className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              </div>
-            </Card>
-          ))}
-        </div>
+
+                {/* Desktop (md+): единый grid с фиксированными колонками показателей */}
+                <div className="hidden md:grid grid-cols-[minmax(0,1fr)_72px_72px_72px_72px_40px] items-center gap-4">
+                  <Link href={`/report/${c.id}`}>
+                    <a className="min-w-0">
+                      <CandidateInfo c={c} />
+                    </a>
+                  </Link>
+                  <ScoreCell v={c.riskScore} />
+                  <ScoreCell v={c.inflationScore} />
+                  <ScoreCell v={c.wolvesScore} />
+                  <ScoreCell v={c.totalScore} bold />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      if (confirm("Удалить проверку?")) del.mutate(c.id);
+                    }}
+                    data-testid={`button-delete-desk-${c.id}`}
+                  >
+                    <Trash2 className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
       </main>
     </div>
   );
 }
 
-function ScoreCell({ v, l, bold }: { v: number; l: string; bold?: boolean }) {
+function CandidateInfo({ c }: { c: CheckListItem }) {
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="truncate font-semibold">
+          {c.candidateName || "Без ФИО"}
+        </div>
+        <VerdictBadge verdict={c.verdict} size="sm" />
+        {c.hasPipeline && (
+          <span
+            className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-emerald-400"
+            data-testid={`badge-has-pipeline-${c.id}`}
+            title={
+              c.pipelineCount && c.pipelineCount > 1
+                ? `Проведён полный пайплайн × ${c.pipelineCount}`
+                : "Проведён полный пайплайн"
+            }
+          >
+            <Workflow className="h-3 w-3" />
+            +пайплайн
+            {c.pipelineCount && c.pipelineCount > 1 ? ` ×${c.pipelineCount}` : ""}
+          </span>
+        )}
+      </div>
+      <div className="mt-1 truncate font-mono text-xs text-muted-foreground">
+        {new Date(c.createdAt).toLocaleString("ru-RU")} · №{c.id}
+      </div>
+    </>
+  );
+}
+
+function ScoreCell({ v, l, bold }: { v: number; l?: string; bold?: boolean }) {
   const color =
     v >= 61 ? "text-red-400" : v >= 31 ? "text-amber-400" : "text-emerald-400";
   return (
-    <div className="w-16 text-right">
+    <div className="text-right">
       <div
-        className={`font-mono text-base ${color} ${
-          bold ? "font-bold text-lg" : ""
+        className={`font-mono tabular-nums ${color} ${
+          bold ? "text-lg font-bold" : "text-base"
         }`}
       >
         {v}
       </div>
-      <div className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
-        {l}
-      </div>
+      {l && (
+        <div className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
+          {l}
+        </div>
+      )}
     </div>
   );
 }
