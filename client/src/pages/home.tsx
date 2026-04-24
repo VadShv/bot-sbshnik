@@ -23,6 +23,8 @@ import {
   Users,
 } from "lucide-react";
 import type { FullReport } from "@/lib/types";
+import detectiveImg from "@/assets/detective.jpg";
+import wolfhoundImg from "@/assets/wolfhound.jpg";
 
 export default function Home() {
   const [, navigate] = useLocation();
@@ -77,23 +79,54 @@ export default function Home() {
       <Header />
 
       <main className="mx-auto max-w-5xl px-6 py-10">
-        {/* Hero */}
-        <div className="mb-6">
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-primary">
-            <ShieldAlert className="h-3 w-3" />
-            Проверка без ПДн · Yandex GPT
+        {/* Hero с парной визиткой  детектив + волкодав  */}
+        <div className="mb-6 grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-primary">
+              <ShieldAlert className="h-3 w-3" />
+              Проверка без ПДн · Yandex GPT
+            </div>
+            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
+              Жёсткая проверка резюме — без персональных данных
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+              Сервис анализирует риски, накрутку опыта и принадлежность сообществу «волков»,
+              <strong className="font-semibold text-foreground"> не используя ФИО, паспорт,
+              точный телефон и полный email</strong>. В модель уходит только обезличенный текст
+              резюме. При этом сохраняются <strong className="font-semibold text-foreground">косвенные
+              маркеры контактов</strong> — домен почты (gmail.com, yandex.ru, корпоративный), префикс
+              мобильного (+7 9XX), город, ссылки на соцсети — они остаются для оценки риска.
+            </p>
           </div>
-          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
-            Жёсткая проверка резюме — без персональных данных
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Сервис анализирует риски, накрутку опыта и принадлежность сообществу «волков»,
-            <strong className="font-semibold text-foreground"> не используя ФИО, паспорт,
-            точный телефон и полный email</strong>. В модель уходит только обезличенный текст
-            резюме. При этом сохраняются <strong className="font-semibold text-foreground">косвенные
-            маркеры контактов</strong> — домен почты (gmail.com, yandex.ru, корпоративный), префикс
-            мобильного (+7 9XX), город, ссылки на соцсети — они остаются для оценки риска.
-          </p>
+
+          {/* Парная визитка: детектив ищет — волкодав охраняет стаю */}
+          <div
+            className="hidden md:flex shrink-0 items-end gap-3 rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-4 pr-5"
+            data-testid="hero-mascots"
+          >
+            <div className="flex flex-col items-center gap-1">
+              <div className="relative h-28 w-28 overflow-hidden rounded-xl border border-primary/25 bg-background/60 p-2">
+                <img
+                  src={detectiveImg}
+                  alt="Детектив с лупой"
+                  className="h-full w-full object-contain mix-blend-multiply dark:mix-blend-screen"
+                  draggable={false}
+                />
+              </div>
+              <div className="font-mono text-[9px] uppercase tracking-widest text-primary">ищет</div>
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <div className="relative h-28 w-28 overflow-hidden rounded-xl border border-primary/25 bg-background/60 p-2">
+                <img
+                  src={wolfhoundImg}
+                  alt="Волкодав"
+                  className="h-full w-full object-contain mix-blend-multiply dark:mix-blend-screen"
+                  draggable={false}
+                />
+              </div>
+              <div className="font-mono text-[9px] uppercase tracking-widest text-primary">охраняет</div>
+            </div>
+          </div>
         </div>
 
         {/* ────────── Баннер «Без ПДн» — компактно, свёрнут по умолчанию ────────── */}
@@ -138,83 +171,6 @@ export default function Home() {
                     <li>• Домены работодателей и учебных заведений</li>
                   </ul>
                 </div>
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-
-        {/* ────────── Wolf Detector v1.0 — компактно, свёрнут по умолчанию ────────── */}
-        <Accordion type="single" collapsible className="mb-6">
-          <AccordionItem
-            value="wolf"
-            className="rounded-lg border-2 border-orange-500/40 bg-gradient-to-br from-orange-500/10 via-red-500/5 to-background px-4"
-          >
-            <AccordionTrigger
-              data-testid="trigger-wolf"
-              className="py-3 hover:no-underline [&>svg]:text-orange-300"
-            >
-              <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-orange-400">
-                <span aria-hidden>🐺</span>
-                Wolf Detector v1.0 · усиленная проверка — кто прячется в стае
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="pb-4">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="min-w-[240px] flex-1">
-                  <div className="text-sm font-bold">
-                    5 архетипов «волка» — что выявляет агент
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Отдельный AI-агент со своим system prompt и 7-проходным анализом ловит
-                    один из пяти устойчивых паттернов нелояльного кандидата.
-                  </p>
-                </div>
-                <div className="rounded-lg border border-orange-500/30 bg-background/60 px-3 py-2 text-center">
-                  <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                    Движок
-                  </div>
-                  <div className="mt-0.5 text-sm font-bold text-orange-400">Yandex GPT Pro</div>
-                  <div className="text-[11px] text-muted-foreground">Gen 5.x · flagship</div>
-                </div>
-              </div>
-
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-                {[
-                  { icon: "🏃", title: "Перебежчик", desc: "Job-hopper с маскировкой частоты смен" },
-                  { icon: "🎨", title: "Фальсификатор", desc: "Придумывает должности, проекты, метрики" },
-                  { icon: "🎭", title: "Манипулятор", desc: "Социопроходимец интервью — пуст в конкретике" },
-                  { icon: "💣", title: "Токсик", desc: "Разрушитель команды — «все вокруг виноваты»" },
-                  { icon: "🕵️", title: "Шпион", desc: "Параллельный бизнес / переходы к конкурентам" },
-                ].map((a) => (
-                  <div
-                    key={a.title}
-                    className="rounded-md border border-orange-500/30 bg-background/50 p-2.5"
-                  >
-                    <div className="mb-1 flex items-center gap-1.5">
-                      <span className="text-base" aria-hidden>{a.icon}</span>
-                      <div className="text-xs font-semibold text-orange-300">{a.title}</div>
-                    </div>
-                    <p className="text-[11px] leading-snug text-muted-foreground">{a.desc}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {[
-                  "📊 Risk Score 1–5",
-                  "🐺 Wolf Index 0–3",
-                  "🔍 OSINT · 12 источников с URL",
-                  "💬 Триплеты STAR/PARLA",
-                  "🎯 Профайлинг · 4 типа вопросов",
-                  "📄 Executive Summary",
-                ].map((t) => (
-                  <span
-                    key={t}
-                    className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[11px] text-orange-300"
-                  >
-                    {t}
-                  </span>
-                ))}
               </div>
             </AccordionContent>
           </AccordionItem>
@@ -325,8 +281,17 @@ export default function Home() {
 
         {/* ════════ НИЖНИЕ БЛОКИ: категории сигналов — компактные, свёрнутые ════════ */}
         <div className="mt-10">
-          <div className="mb-3 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-            🎪 Матрица сигналов · на что смотрит детектив
+          <div className="mb-3 flex items-center gap-2">
+            <img
+              src={detectiveImg}
+              alt=""
+              aria-hidden
+              className="h-7 w-7 object-contain mix-blend-multiply dark:mix-blend-screen"
+              draggable={false}
+            />
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Матрица сигналов · на что смотрит детектив
+            </div>
           </div>
           <Accordion type="multiple" className="space-y-3">
             {SIGNAL_SECTIONS.map((section) => (
@@ -382,6 +347,97 @@ export default function Home() {
             .
           </p>
         </div>
+
+        {/* ────────── Wolf Detector v1.0 — переехал вниз: компактно, свёрнут по умолчанию ────────── */}
+        <Accordion type="single" collapsible className="mt-10">
+          <AccordionItem
+            value="wolf"
+            className="relative overflow-hidden rounded-lg border-2 border-orange-500/40 bg-gradient-to-br from-orange-500/10 via-red-500/5 to-background px-4"
+          >
+            {/* декоративный волкодав в углу — страж блока */}
+            <img
+              src={wolfhoundImg}
+              alt=""
+              aria-hidden
+              draggable={false}
+              className="pointer-events-none absolute -right-6 -bottom-4 h-40 w-40 opacity-25 mix-blend-multiply dark:mix-blend-screen sm:h-48 sm:w-48"
+            />
+            <AccordionTrigger
+              data-testid="trigger-wolf"
+              className="relative py-3 hover:no-underline [&>svg]:text-orange-300"
+            >
+              <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-orange-400">
+                <img
+                  src={wolfhoundImg}
+                  alt=""
+                  aria-hidden
+                  className="h-4 w-4 object-contain mix-blend-multiply dark:mix-blend-screen"
+                  draggable={false}
+                />
+                Wolf Detector v1.0 · усиленная проверка — кто прячется в стае
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="relative pb-4">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-[240px] flex-1">
+                  <div className="text-sm font-bold">
+                    5 архетипов «волка» — что выявляет агент
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Отдельный AI-агент со своим system prompt и 7-проходным анализом ловит
+                    один из пяти устойчивых паттернов нелояльного кандидата.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-orange-500/30 bg-background/60 px-3 py-2 text-center">
+                  <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Движок
+                  </div>
+                  <div className="mt-0.5 text-sm font-bold text-orange-400">Yandex GPT Pro</div>
+                  <div className="text-[11px] text-muted-foreground">Gen 5.x · flagship</div>
+                </div>
+              </div>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                {[
+                  { icon: "🏃", title: "Перебежчик", desc: "Job-hopper с маскировкой частоты смен" },
+                  { icon: "🎨", title: "Фальсификатор", desc: "Придумывает должности, проекты, метрики" },
+                  { icon: "🎭", title: "Манипулятор", desc: "Социопроходимец интервью — пуст в конкретике" },
+                  { icon: "💣", title: "Токсик", desc: "Разрушитель команды — «все вокруг виноваты»" },
+                  { icon: "🕵️", title: "Шпион", desc: "Параллельный бизнес / переходы к конкурентам" },
+                ].map((a) => (
+                  <div
+                    key={a.title}
+                    className="rounded-md border border-orange-500/30 bg-background/50 p-2.5"
+                  >
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <span className="text-base" aria-hidden>{a.icon}</span>
+                      <div className="text-xs font-semibold text-orange-300">{a.title}</div>
+                    </div>
+                    <p className="text-[11px] leading-snug text-muted-foreground">{a.desc}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {[
+                  "📊 Risk Score 1–5",
+                  "🐺 Wolf Index 0–3",
+                  "🔍 OSINT · 12 источников с URL",
+                  "💬 Триплеты STAR/PARLA",
+                  "🎯 Профайлинг · 4 типа вопросов",
+                  "📄 Executive Summary",
+                ].map((t) => (
+                  <span
+                    key={t}
+                    className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[11px] text-orange-300"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
       </main>
     </div>
   );
