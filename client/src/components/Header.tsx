@@ -6,7 +6,6 @@ export function Header() {
   const [location] = useLocation();
   const nav: { href: string; label: string }[] = [
     { href: "/", label: "Новая проверка" },
-    { href: "/pipeline", label: "Пайплайн v3.0" },
     { href: "/history", label: "История" },
     { href: "/about", label: "Методика" },
   ];
