@@ -251,6 +251,7 @@ function PipelineRunner({
       const res = await apiRequest("POST", "/api/pipeline/analyze", {
         resumeText: slots.resume.text,
         etk: etkStructured,
+        etkText: slots.etk.text,
         interviewText: slots.interview.text,
         referencesText: slots.references.text,
         form,
@@ -285,6 +286,7 @@ function PipelineRunner({
       const res = await apiRequest("POST", `/api/pipeline/${reportId}/recompute`, {
         form,
         etk: etkStructured,
+        etkText: slots.etk.text,
         interviewText: slots.interview.text,
         referencesText: slots.references.text,
       });
@@ -490,6 +492,48 @@ function PipelineRunner({
             );
           })}
         </div>
+
+        {/* Текст ЭТК / СФР — видимый распарсенный текст (v3.6.1) */}
+        <Card className="mt-5 border-card-border bg-card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Label className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              ЭТК / СФР (текст) — можно вставить вручную или отредактировать
+            </Label>
+            {slots.etk.text.trim().length > 0 && (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest ${
+                  etkStructured.source === "xml" && etkStructured.records.length > 0
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                    : "border-primary/30 bg-primary/10 text-primary"
+                }`}
+                data-testid="badge-etk-parsed"
+              >
+                <FileCheck className="h-3 w-3" />
+                {etkStructured.source === "xml" && etkStructured.records.length > 0
+                  ? `XML · ${etkStructured.records.length} зап.`
+                  : `текст · ${slots.etk.text.length.toLocaleString("ru-RU")} симв.`}
+              </span>
+            )}
+          </div>
+          <Textarea
+            className="mt-2 min-h-[160px] resize-y font-mono text-xs"
+            value={slots.etk.text}
+            onChange={(e) => patchSlot("etk", { text: e.target.value })}
+            placeholder="Сюда подставится распарсенный текст ЭТК/СФР после загрузки файла. Можно также вставить текст вручную. LLM сам извлечёт компании, должности и даты."
+            data-testid="textarea-etk"
+            disabled={running}
+          />
+          {etkStructured.source === "xml" && etkStructured.records.length > 0 && (
+            <p className="mt-2 text-[11px] text-emerald-300">
+              ✓ XML-структура распознана — верификация идёт по записям, текст хранится для аудита.
+            </p>
+          )}
+          {slots.etk.text.trim().length > 0 && etkStructured.source !== "xml" && (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Текст ЭТК передаётся в LLM для верификации. Если видите, что что-то потерялось при распознавании PDF — отредактируйте текст вручную до запуска пайплайна.
+            </p>
+          )}
+        </Card>
 
         {/* Текст резюме (можно без файла) */}
         <Card className="mt-5 border-card-border bg-card p-5">

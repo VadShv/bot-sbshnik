@@ -111,20 +111,30 @@ function refLabel(r: References): string {
 // Подготовка входных блоков для промпта (с уже посчитанными датами)
 // ==========================================================
 
-function buildEtkBlock(etk: EtkStructured): string {
-  if (!etk.records.length) {
-    return etk.source === "none"
-      ? "— ЭТК не предоставлена. Все статусы верификации = not_checked, blockingConflict=false, etkAvailable=false. —"
-      : "— ЭТК прислана, но записи не извлечены. —";
+function buildEtkBlock(etk: EtkStructured, etkRawText: string): string {
+  // 1) Если есть структурированные записи (XML) — отдаём их таблицей
+  if (etk.records.length) {
+    return etk.records
+      .map((r, i) => {
+        const period = `${r.startDate ?? "?"} — ${r.endDate ?? "по настоящее время"}`;
+        const pos = r.position ? `, ${r.position}` : "";
+        const reason = r.reason ? `, основание: ${r.reason}` : "";
+        return `  ${i + 1}. ${r.company}${pos} [${period}]${reason}`;
+      })
+      .join("\n");
   }
-  return etk.records
-    .map((r, i) => {
-      const period = `${r.startDate ?? "?"} — ${r.endDate ?? "по настоящее время"}`;
-      const pos = r.position ? `, ${r.position}` : "";
-      const reason = r.reason ? `, основание: ${r.reason}` : "";
-      return `  ${i + 1}. ${r.company}${pos} [${period}]${reason}`;
-    })
-    .join("\n");
+  // 2) Нет структурированных записей, но есть сырой текст ЭТК (PDF/DOCX/TXT)
+  //    → отдаём LLM сырой текст: модель САМА извлекает компании/должности/даты.
+  const raw = (etkRawText || "").trim();
+  if (raw.length > 0) {
+    const trimmed = raw.slice(0, 9000);
+    return `— ЭТК передана как сырой текст (${raw.length.toLocaleString("ru-RU")} симв.). Извлеки из него записи трудовой деятельности САМОСТОЯТЕЛЬНО и сопоставляй с резюме как обычно. etkAvailable=true. —
+"""
+${trimmed}
+"""`;
+  }
+  // 3) ЭТК вообще не предоставлена
+  return "— ЭТК не предоставлена. Все статусы верификации = not_checked, blockingConflict=false, etkAvailable=false. —";
 }
 
 function buildTimelineBlock(timeline: TimelineMetrics | null): string {
@@ -169,6 +179,8 @@ ${acidBlocksTxt}
 function buildAnalyzePrompt(
   resumeText: string,
   etk: EtkStructured,
+  etkRawText: string,
+  etkAvailable: boolean,
   interviewText: string,
   referencesText: string,
   form: RecruiterForm,
@@ -189,8 +201,8 @@ function buildAnalyzePrompt(
 ${resumeText.slice(0, 10000)}
 """
 
-[ЭТК / СФР — структурированные записи]
-${buildEtkBlock(etk)}
+[ЭТК / СФР — структурированные записи ИЛИ сырой текст]
+${buildEtkBlock(etk, etkRawText)}
 
 [ХРОНОЛОГИЯ ОПЫТА — уже посчитана автоматически, используй эти данные]
 ${buildTimelineBlock(timeline)}
@@ -222,7 +234,8 @@ ${buildLinguisticBlock(linguistic)}
 • "partial" — компания совпадает, но расхождение в датах 31–90 дней ИЛИ различие в должности.
 • "conflict" — компания отсутствует в ЭТК ИЛИ расхождение > 90 дней ИЛИ явное противоречие.
 • "not_checked" — ЭТК отсутствует.
-Если ЭТК отсутствует — ВСЕ статусы должны быть "not_checked", overall "not_checked", blockingConflict=false, etkAvailable=false.
+Если ЭТК отсутствует (etkAvailable=false) — ВСЕ статусы должны быть "not_checked", overall "not_checked", blockingConflict=false, etkAvailable=false.
+Если ЭТК передана как сырой текст (etkAvailable=true, блок ЭТК выше содержит текст в кавычках) — извлеки из него компании, должности и даты САМ и проведи сопоставление, как если бы это была таблица. Статус "not_checked" в этом случае использовать НЕЛЬЗЯ.
 В поле declared указывай период в формате «YYYY-MM — YYYY-MM» (обе даты — ISO-месяцы). Для открытого периода используй «YYYY-MM — present». Не используй текстовые форматы типа «март 2020» или «наст.время» — только ISO.
 ВАЖНО: расхождение статуса «открыт» между резюме и ЭТК (в обоих источниках нет endDate) — это НЕ partial и НЕ conflict, это "confirmed".
 
@@ -237,20 +250,7 @@ ${buildLinguisticBlock(linguistic)}
 • ОГРАНИЧЕНИЕ СОГЛАСОВАННОСТИ: если в redFlags есть хоть один элемент — score ≤ 70. Если redFlags пуст и greenFlags ≥ 2 — score ≥ 60.
 
 ==============================
-МОДУЛЬ 3 — CULTURAL FIT V3 (3 ЦЕННОСТИ)
-==============================
-Оцени 1–5 по каждой ценности:
-• responsibility — «Ответственность за результат»: берёт ответственность, доводит до конца, не перекладывает вину, думает о результате для бизнеса.
-• partnership — «Партнёрство»: командность, признание чужого вклада, говорит «мы», помогает, договаривается, уважает работодателя.
-• entrepreneurship — «Дух предпринимательства»: инициатива, работа в неопределённости, готовность запускать новое, проактивность.
-ОГРАНИЧЕНИЯ СОГЛАСОВАННОСТИ:
-• Если attitudeToFormer="hostile" или "critical" — partnership НЕ может быть выше 3.
-• Если есть короткие контракты (<12 мес) и кандидат уходил по «conflict»/«burnout» — responsibility НЕ может быть выше 3.
-• Если данных по ценности недостаточно — ставь 3 и в note напиши: «свидетельств недостаточно».
-В evidence — 1–3 дословные цитаты с указанием источника в скобках: «...текст...» (резюме / интервью / референс).
-
-==============================
-МОДУЛЬ 4 — ИНДЕКС ЛОЯЛЬНОСТИ И СТАБИЛЬНОСТИ (ILS)
+МОДУЛЬ 3 — ИНДЕКС ЛОЯЛЬНОСТИ И СТАБИЛЬНОСТИ (ILS)
 ==============================
 sHistory (0–100) — стабильность трудовой истории. Опирайся ИСКЛЮЧИТЕЛЬНО на блок [ХРОНОЛОГИЯ ОПЫТА]. Ориентир:
    • средняя длительность ≥ 36 мес и нет коротких контрактов → 80–95
@@ -281,6 +281,10 @@ flags — 0–5 коротких маркеров рисков лояльнос�
 • linguisticOverallSummary — 2–3 предложения: общий лингвистический профиль.
 
 ==============================
+МОДУЛЬ 4 — УДАЛЁН (Cultural Fit / 3 ценности больше не анализируются в пайплайне)
+==============================
+
+==============================
 EXECUTIVE SUMMARY (СВОДКА ДЛЯ РУКОВОДИТЕЛЯ)
 ==============================
 Собери непротиворечивую сводку, которая ОДНОЗНАЧНО следует из модулей выше.
@@ -298,7 +302,7 @@ EXECUTIVE SUMMARY (СВОДКА ДЛЯ РУКОВОДИТЕЛЯ)
     "status": "confirmed|partial|conflict|not_checked",
     "summary": "1-2 предложения",
     "blockingConflict": false,
-    "etkAvailable": ${etk.source !== "none" && etk.records.length > 0 ? "true" : "false"},
+    "etkAvailable": ${etkAvailable ? "true" : "false"},
     "items": [
       { "company": "...", "position": "...", "declared": "YYYY-MM — YYYY-MM или YYYY-MM — present", "etk": "период по ЭТК или пусто", "status": "confirmed|partial|conflict|not_checked", "note": "краткий комментарий" }
     ]
@@ -885,6 +889,7 @@ function normalizeExecutiveSummary(
 export type PipelineAnalyzeInput = {
   resumeText: string;
   etk: EtkStructured;
+  etkRawText?: string;
   interviewText: string;
   referencesText: string;
   form: RecruiterForm;
@@ -894,7 +899,11 @@ export async function runPipelineAnalysis(
   input: PipelineAnalyzeInput,
 ): Promise<SingleStepReport> {
   const { resumeText, etk, interviewText, referencesText, form } = input;
-  const etkAvailable = etk.source !== "none" && etk.records.length > 0;
+  const etkRawText = (input.etkRawText || "").trim();
+  // v3.6.1: ЭТК считается доступной, если есть либо структурированные записи (XML),
+  // либо хотя бы 200 симв. сырого текста (PDF/DOCX/TXT) — LLM способен извлечь данные.
+  const etkAvailable =
+    (etk.source !== "none" && etk.records.length > 0) || etkRawText.length >= 200;
 
   // Pre-process: считаем хронологию ЛОКАЛЬНО, чтобы LLM не делал арифметику
   const timeline = buildTimeline(resumeText, etk);
@@ -905,6 +914,8 @@ export async function runPipelineAnalysis(
   const userPrompt = buildAnalyzePrompt(
     resumeText,
     etk,
+    etkRawText,
+    etkAvailable,
     interviewText,
     referencesText,
     form,

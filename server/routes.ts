@@ -522,6 +522,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   async function doPipelineAnalyze(params: {
     resumeText: string;
     etk: EtkStructured;
+    etkRawText: string;
     interviewText: string;
     referencesText: string;
     form: RecruiterForm;
@@ -531,10 +532,22 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const report = await runPipelineAnalysis({
       resumeText: params.resumeText,
       etk: params.etk,
+      etkRawText: params.etkRawText,
       interviewText: params.interviewText,
       referencesText: params.referencesText,
       form: params.form,
     });
+    // v3.6.1: сохраняем структуру + сырой текст в одном JSON для recompute
+    const hasStructured = params.etk.records.length > 0;
+    const hasRaw = params.etkRawText && params.etkRawText.trim().length > 0;
+    const etkPayload =
+      hasStructured || hasRaw
+        ? JSON.stringify({
+            _kind: "pipeline-etk-v2",
+            structured: params.etk,
+            rawText: params.etkRawText || "",
+          })
+        : null;
     const id = nanoid(10);
     await storage.savePipelineCheck({
       id,
@@ -543,7 +556,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       version: params.version,
       candidateName: report.candidateName,
       resumeText: params.resumeText,
-      etkText: params.etk.records.length ? JSON.stringify(params.etk) : null,
+      etkText: etkPayload,
       interviewText: params.interviewText || null,
       referencesText: params.referencesText || null,
       recruiterForm: JSON.stringify(params.form),
@@ -554,11 +567,29 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     return { id, report };
   }
 
+  // Распаковка сохранённого etkText: поддерживает старый формат (EtkStructured) и новый v2 ({structured, rawText}).
+  function unpackEtkText(raw: string | null | undefined): { etk: EtkStructured; rawText: string } {
+    if (!raw) return { etk: { records: [], source: "none" }, rawText: "" };
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed._kind === "pipeline-etk-v2") {
+        return {
+          etk: normalizeEtk(parsed.structured),
+          rawText: typeof parsed.rawText === "string" ? parsed.rawText : "",
+        };
+      }
+      return { etk: normalizeEtk(parsed), rawText: "" };
+    } catch {
+      return { etk: { records: [], source: "none" }, rawText: "" };
+    }
+  }
+
   app.post("/api/pipeline/analyze", async (req, res) => {
     try {
       const {
         resumeText,
         etk,
+        etkText,
         interviewText,
         referencesText,
         form,
@@ -575,6 +606,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.status(400).json({ message: "Не заполнена форма рекрутера." });
       }
       const nEtk = normalizeEtk(etk);
+      const nEtkRaw = typeof etkText === "string" ? etkText.slice(0, 200000) : "";
       // parentCheckId — связь с исходной обычной проверкой (checks.id)
       // С v3.3 пайплайн создаётся ТОЛЬКО на базе существующей базовой проверки.
       if (typeof parentCheckId !== "string" || !parentCheckId.trim()) {
@@ -592,6 +624,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const result = await doPipelineAnalyze({
         resumeText,
         etk: nEtk,
+        etkRawText: nEtkRaw,
         interviewText: String(interviewText || ""),
         referencesText: String(referencesText || ""),
         form: nForm,
@@ -630,9 +663,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       // Опциональный патч: клиент может передать обновлённую форму/тексты
       const patch = req.body || {};
       const form = normalizeForm(patch.form) || (JSON.parse(prev.recruiterForm) as RecruiterForm);
-      const etk = normalizeEtk(
-        patch.etk ?? (prev.etkText ? JSON.parse(prev.etkText) : { records: [], source: "none" }),
-      );
+      // Сырой текст ЭТК и структуру восстанавливаем из сохранённого payload; патч может переопределить.
+      const stored = unpackEtkText(prev.etkText);
+      const etk = normalizeEtk(patch.etk ?? stored.etk);
+      const etkRawText =
+        typeof patch.etkText === "string" ? patch.etkText.slice(0, 200000) : stored.rawText;
       const resumeText = typeof patch.resumeText === "string" && patch.resumeText.trim().length >= 100
         ? patch.resumeText
         : prev.resumeText;
@@ -646,6 +681,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const result = await doPipelineAnalyze({
         resumeText,
         etk,
+        etkRawText,
         interviewText,
         referencesText,
         form,
