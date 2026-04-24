@@ -7,6 +7,7 @@ import { runDetectors, aggregateCategoryScore } from "./detectors";
 import { yandexAnalyze, yandexComplete } from "./yandex";
 import { runWolfAudit } from "./wolfDetector";
 import { runFitGuard } from "./fitGuard";
+import { runGitHubDeepScan } from "./githubDeepScan";
 import { stripPhantomText } from "./pipelineAnalyzer";
 import type {
   TeamFitReport,
@@ -14,6 +15,12 @@ import type {
   MbtiCluster,
   FitAxis,
   InterviewHypothesis,
+  GitHubDeepScanReport,
+  GhTechProfile,
+  GhBehaviorProfile,
+  GhRiskFlag,
+  GhOceanHints,
+  GhEvidenceLink,
 } from "@shared/schema";
 import type {
   Finding,
@@ -874,6 +881,119 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.delete("/api/checks/:id/team-fit", async (req, res) => {
     try {
       await storage.deleteTeamFitReport(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // =====================================================================
+  // GitHub DeepScan v3.5
+  // =====================================================================
+
+  function rowToGithubDeepScan(row: any): GitHubDeepScanReport {
+    const safeParse = <T,>(s: string, fallback: T): T => {
+      try { return JSON.parse(s); } catch { return fallback; }
+    };
+    return {
+      id: row.id,
+      checkId: row.checkId,
+      createdAt: row.createdAt,
+      githubHandle: row.githubHandle,
+      profileUrl: row.profileUrl,
+      sbScore: row.sbScore,
+      techScore: row.techScore,
+      behaviorScore: row.behaviorScore,
+      riskScore: row.riskScore,
+      confidence: row.confidence,
+      techProfile: safeParse<GhTechProfile>(row.techProfile, {
+        primary: [], languages: [], publicRepos: 0, originalRepos: 0,
+        totalStars: 0, accountAgeYears: 0, depthYears: 0, topRepos: [], notes: [],
+      }),
+      behaviorProfile: safeParse<GhBehaviorProfile>(row.behaviorProfile, {
+        hourHistogramMsk: new Array(24).fill(0),
+        nightShare: 0, workHoursShare: 0, weekendShare: 0,
+        inferredTimezone: "unknown", commitsPerWeek: 0, regularity: 0, notes: [],
+      }),
+      riskFlags: safeParse<GhRiskFlag[]>(row.riskFlags, []),
+      oceanHints: safeParse<GhOceanHints>(row.oceanHints, {
+        O: 0.5, C: 0.5, E: 0.5, A: 0.5, N: 0.5,
+        rationale: { O: "", C: "", E: "", A: "", N: "" },
+      }),
+      evidence: safeParse<GhEvidenceLink[]>(row.evidence, []),
+      summary: row.summary || "",
+      recommendation: row.recommendation || "",
+      dataInsufficient: Boolean(row.dataInsufficient),
+      fetchError: row.fetchError || null,
+    };
+  }
+
+  // GET — вернуть сохранённый отчёт GitHub DeepScan (или null)
+  app.get("/api/checks/:id/github-deepscan", async (req, res) => {
+    try {
+      const row = await storage.getGithubDeepScanReportByCheckId(req.params.id);
+      if (!row) { res.json(null); return; }
+      res.json(rowToGithubDeepScan(row));
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // POST — запустить DeepScan (handle из body.githubHandle или из резюме)
+  app.post("/api/checks/:id/github-deepscan", async (req, res) => {
+    try {
+      const checkId = req.params.id;
+      const check = await storage.getCheck(checkId);
+      if (!check) {
+        res.status(404).json({ message: "Проверка не найдена" });
+        return;
+      }
+      const handleOverride =
+        typeof req.body?.githubHandle === "string" ? req.body.githubHandle : undefined;
+
+      const analysis = await runGitHubDeepScan({
+        resumeText: check.resumeText,
+        handleOverride,
+      });
+
+      if (analysis.dataInsufficient && !analysis.githubHandle) {
+        res.status(400).json({
+          message: analysis.fetchError || "GitHub handle не найден. Укажите его вручную.",
+        });
+        return;
+      }
+
+      const saved = await storage.createGithubDeepScanReport({
+        id: nanoid(),
+        checkId,
+        createdAt: Date.now(),
+        githubHandle: analysis.githubHandle,
+        profileUrl: analysis.profileUrl,
+        sbScore: analysis.sbScore,
+        techScore: analysis.techScore,
+        behaviorScore: analysis.behaviorScore,
+        riskScore: analysis.riskScore,
+        confidence: analysis.confidence,
+        techProfile: JSON.stringify(analysis.techProfile),
+        behaviorProfile: JSON.stringify(analysis.behaviorProfile),
+        riskFlags: JSON.stringify(analysis.riskFlags),
+        oceanHints: JSON.stringify(analysis.oceanHints),
+        evidence: JSON.stringify(analysis.evidence),
+        summary: analysis.summary,
+        recommendation: analysis.recommendation,
+        dataInsufficient: analysis.dataInsufficient,
+        fetchError: analysis.fetchError,
+      });
+      res.json(rowToGithubDeepScan(saved));
+    } catch (e: any) {
+      console.error("GitHub DeepScan error:", e);
+      res.status(500).json({ message: e?.message || "Ошибка анализа GitHub DeepScan" });
+    }
+  });
+
+  app.delete("/api/checks/:id/github-deepscan", async (req, res) => {
+    try {
+      await storage.deleteGithubDeepScanReport(req.params.id);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: e.message });

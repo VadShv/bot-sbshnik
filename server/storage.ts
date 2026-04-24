@@ -1,4 +1,4 @@
-import { checks, pipelineChecks, chatMessages, teamFitReports } from "@shared/schema";
+import { checks, pipelineChecks, chatMessages, teamFitReports, githubDeepScanReports } from "@shared/schema";
 import type {
   Check,
   InsertCheck,
@@ -8,6 +8,8 @@ import type {
   InsertChatMessage,
   InsertTeamFitReport,
   TeamFitReportRow,
+  InsertGithubDeepScanReport,
+  GithubDeepScanReportRow,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
@@ -82,6 +84,28 @@ sqlite.exec(`
     data_insufficient INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_team_fit_check ON team_fit_reports(check_id);
+  CREATE TABLE IF NOT EXISTS github_deepscan_reports (
+    id TEXT PRIMARY KEY,
+    check_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    github_handle TEXT NOT NULL,
+    profile_url TEXT NOT NULL,
+    sb_score INTEGER NOT NULL,
+    tech_score INTEGER NOT NULL,
+    behavior_score INTEGER NOT NULL,
+    risk_score INTEGER NOT NULL,
+    confidence INTEGER NOT NULL,
+    tech_profile TEXT NOT NULL,
+    behavior_profile TEXT NOT NULL,
+    risk_flags TEXT NOT NULL,
+    ocean_hints TEXT NOT NULL,
+    evidence TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    recommendation TEXT NOT NULL,
+    data_insufficient INTEGER NOT NULL,
+    fetch_error TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_github_deepscan_check ON github_deepscan_reports(check_id);
 `);
 
 export const db = drizzle(sqlite);
@@ -107,6 +131,10 @@ export interface IStorage {
   createTeamFitReport(row: InsertTeamFitReport): Promise<TeamFitReportRow>;
   getTeamFitReportByCheckId(checkId: string): Promise<TeamFitReportRow | undefined>;
   deleteTeamFitReport(checkId: string): Promise<void>;
+  // GitHub DeepScan v3.5
+  createGithubDeepScanReport(row: InsertGithubDeepScanReport): Promise<GithubDeepScanReportRow>;
+  getGithubDeepScanReportByCheckId(checkId: string): Promise<GithubDeepScanReportRow | undefined>;
+  deleteGithubDeepScanReport(checkId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -187,6 +215,21 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteTeamFitReport(checkId: string): Promise<void> {
     db.delete(teamFitReports).where(eq(teamFitReports.checkId, checkId)).run();
+  }
+  async createGithubDeepScanReport(row: InsertGithubDeepScanReport): Promise<GithubDeepScanReportRow> {
+    db.delete(githubDeepScanReports).where(eq(githubDeepScanReports.checkId, row.checkId)).run();
+    return db.insert(githubDeepScanReports).values(row).returning().get();
+  }
+  async getGithubDeepScanReportByCheckId(checkId: string): Promise<GithubDeepScanReportRow | undefined> {
+    return db
+      .select()
+      .from(githubDeepScanReports)
+      .where(eq(githubDeepScanReports.checkId, checkId))
+      .orderBy(desc(githubDeepScanReports.createdAt))
+      .get();
+  }
+  async deleteGithubDeepScanReport(checkId: string): Promise<void> {
+    db.delete(githubDeepScanReports).where(eq(githubDeepScanReports.checkId, checkId)).run();
   }
 }
 

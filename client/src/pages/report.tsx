@@ -11,6 +11,7 @@ import { FindingCard } from "@/components/FindingCard";
 import { WolfReport } from "@/components/WolfReport";
 import { ChatTab } from "@/components/ChatTab";
 import { TeamFitTab } from "@/components/TeamFitTab";
+import { GitHubDeepScanTab } from "@/components/GitHubDeepScanTab";
 import {
   ArrowLeft,
   Download,
@@ -32,6 +33,7 @@ import {
   ChevronRight,
   ChevronDown,
   Sparkles,
+  Github,
 } from "lucide-react";
 import type { FullReport, RecruiterAction, RedFlag, PipelineSummary } from "@/lib/types";
 import { useMemo, useState } from "react";
@@ -164,7 +166,7 @@ export default function ReportPage() {
 
         {/* ============ 3 ВКЛАДКИ v3.3 ============ */}
         <Tabs defaultValue="base" className="mb-4 print:hidden">
-          <TabsList className="grid w-full grid-cols-2 md:w-auto md:inline-grid md:grid-cols-4">
+          <TabsList className="grid w-full grid-cols-2 md:w-auto md:inline-grid md:grid-cols-5">
             <TabsTrigger value="base" data-testid="tab-base">
               <ShieldAlert className="mr-1.5 h-3.5 w-3.5" />
               Базовая проверка
@@ -172,6 +174,10 @@ export default function ReportPage() {
             <TabsTrigger value="teamfit" data-testid="tab-teamfit">
               <Sparkles className="mr-1.5 h-3.5 w-3.5" />
               Team Fit
+            </TabsTrigger>
+            <TabsTrigger value="github" data-testid="tab-github">
+              <Github className="mr-1.5 h-3.5 w-3.5" />
+              GitHub DeepScan
             </TabsTrigger>
             <TabsTrigger value="pipeline" data-testid="tab-pipeline">
               <Workflow className="mr-1.5 h-3.5 w-3.5" />
@@ -191,6 +197,11 @@ export default function ReportPage() {
           {/* ============ TAB: TEAM FIT ============ */}
           <TabsContent value="teamfit" className="mt-6">
             <TeamFitTab checkId={data.id} />
+          </TabsContent>
+
+          {/* ============ TAB: GITHUB DEEPSCAN v3.5 ============ */}
+          <TabsContent value="github" className="mt-6">
+            <GitHubDeepScanTab checkId={data.id} />
           </TabsContent>
 
           {/* ============ TAB 2: ПАЙПЛАЙН (встроенный интерфейс) ============ */}

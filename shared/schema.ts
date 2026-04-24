@@ -114,6 +114,139 @@ export type TeamFitReport = {
   dataInsufficient: boolean;
 };
 
+// --- GitHub DeepScan (v3.5) ---
+// Модуль глубокого анализа GitHub-профиля кандидата: Tech / Behavior / Risk.
+// Все выводы — гипотезы с permalink-доказательствами ("no claim without evidence").
+export const githubDeepScanReports = sqliteTable("github_deepscan_reports", {
+  id: text("id").primaryKey(),
+  checkId: text("check_id").notNull(),        // checks.id
+  createdAt: integer("created_at").notNull(),
+  githubHandle: text("github_handle").notNull(),  // octocat
+  profileUrl: text("profile_url").notNull(),      // https://github.com/octocat
+
+  // Итоговые скоры 0..100
+  sbScore: integer("sb_score").notNull(),
+  techScore: integer("tech_score").notNull(),
+  behaviorScore: integer("behavior_score").notNull(),
+  riskScore: integer("risk_score").notNull(),
+  // Уверенность 0..100 (зависит от объёма публичных данных)
+  confidence: integer("confidence").notNull(),
+
+  // JSON-блоки (см. типы ниже)
+  techProfile: text("tech_profile").notNull(),       // GhTechProfile
+  behaviorProfile: text("behavior_profile").notNull(), // GhBehaviorProfile
+  riskFlags: text("risk_flags").notNull(),           // GhRiskFlag[]
+  oceanHints: text("ocean_hints").notNull(),         // GhOceanHints
+  evidence: text("evidence").notNull(),              // GhEvidenceLink[]
+
+  summary: text("summary").notNull(),
+  recommendation: text("recommendation").notNull(),
+
+  // Если не удалось собрать данные (rate-limit, 404, невалидный handle)
+  dataInsufficient: integer("data_insufficient", { mode: "boolean" }).notNull(),
+  fetchError: text("fetch_error"),                   // nullable
+});
+
+export const insertGithubDeepScanReportSchema = createInsertSchema(githubDeepScanReports);
+export type InsertGithubDeepScanReport = z.infer<typeof insertGithubDeepScanReportSchema>;
+export type GithubDeepScanReportRow = typeof githubDeepScanReports.$inferSelect;
+
+// Типы полезной нагрузки
+export type GhLanguageUsage = {
+  name: string;        // Python, Go, TypeScript, ...
+  bytes: number;
+  percent: number;     // 0..100
+};
+
+export type GhTechProfile = {
+  primary: string[];            // топ-3 языка
+  languages: GhLanguageUsage[]; // все, отсортировано по проценту
+  publicRepos: number;
+  originalRepos: number;        // без forks
+  totalStars: number;
+  accountAgeYears: number;
+  depthYears: number;           // глубина по основному языку, оценка
+  topRepos: { name: string; url: string; stars: number; language: string | null }[];
+  notes: string[];
+};
+
+export type GhBehaviorProfile = {
+  // Распределение активности по часам 0..23 (MSK, доли от всех коммитов 0..1)
+  hourHistogramMsk: number[];   // length 24
+  // Доля ночных коммитов (00:00–06:00 MSK)
+  nightShare: number;
+  // Доля коммитов в рабочее время (пн–пт, 10:00–19:00 MSK)
+  workHoursShare: number;
+  // Выходные вс. будни
+  weekendShare: number;
+  // Таймзона-гипотеза (по медианному часу пика активности)
+  inferredTimezone: string;
+  // Средняя активность (коммитов/неделю за последние 52 недели, оценка)
+  commitsPerWeek: number;
+  // Регулярность 0..1 (как много недель из 52 были активны)
+  regularity: number;
+  notes: string[];
+};
+
+export type GhRiskSeverity = "low" | "medium" | "high" | "critical";
+
+export type GhRiskFlagType =
+  | "moonlighting"
+  | "secret_leak"
+  | "ghost_author"
+  | "nsfw_content"
+  | "employer_crosscheck"
+  | "ai_generated"
+  | "timezone_mismatch"
+  | "contribution_authenticity"
+  | "identity_weak"
+  | "other";
+
+export type GhRiskFlag = {
+  type: GhRiskFlagType;
+  severity: GhRiskSeverity;
+  title: string;           // короткий заголовок
+  description: string;     // что найдено и почему это сигнал
+  evidenceUrls: string[];  // permalinks (commit/PR/repo)
+};
+
+export type GhEvidenceLink = {
+  label: string;
+  url: string;
+};
+
+export type GhOceanHints = {
+  // 0..1, эвристические гипотезы, не диагноз.
+  O: number;  // открытость: разнообразие стека
+  C: number;  // добросовестность: регулярность коммитов
+  E: number;  // экстраверсия: вовлечённость в PR/issues, followers
+  A: number;  // доброжелательность: ко-авторство, PR в чужие репо
+  N: number;  // нейротизм: резкие обрывы активности
+  rationale: { O: string; C: string; E: string; A: string; N: string };
+};
+
+export type GitHubDeepScanReport = {
+  id: string;
+  checkId: string;
+  createdAt: number;
+  githubHandle: string;
+  profileUrl: string;
+  sbScore: number;
+  techScore: number;
+  behaviorScore: number;
+  riskScore: number;
+  confidence: number;
+  techProfile: GhTechProfile;
+  behaviorProfile: GhBehaviorProfile;
+  riskFlags: GhRiskFlag[];
+  oceanHints: GhOceanHints;
+  evidence: GhEvidenceLink[];
+  summary: string;
+  recommendation: string;
+  dataInsufficient: boolean;
+  fetchError: string | null;
+};
+
 // --- Типы отчёта ---
 export type Severity = "low" | "medium" | "high" | "critical";
 
@@ -763,7 +896,7 @@ export type LinguisticAudit = {
 
 // --- Итоговый отчёт пайплайна ---
 export type SingleStepReport = {
-  version: "3.4";
+  version: "3.5";
   candidateName: string | null;
   createdAt: number;
   recruiterForm: RecruiterForm;

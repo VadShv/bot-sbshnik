@@ -76,6 +76,16 @@ export type {
   FitAxis,
   FitAxisStatus,
   InterviewHypothesis,
+  // GitHub DeepScan v3.5
+  GitHubDeepScanReport,
+  GhTechProfile,
+  GhBehaviorProfile,
+  GhRiskFlag,
+  GhRiskFlagType,
+  GhRiskSeverity,
+  GhOceanHints,
+  GhEvidenceLink,
+  GhLanguageUsage,
 } from "@shared/schema";
 
 export type CheckListItem = {

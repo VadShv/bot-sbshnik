@@ -15,6 +15,10 @@ import {
   Building2,
   Package,
   Workflow,
+  Github,
+  Code2,
+  Clock,
+  ShieldAlert,
 } from "lucide-react";
 
 export default function ModulesPage() {
@@ -111,6 +115,77 @@ export default function ModulesPage() {
             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
             <span>
               Вывод строится как гипотезы для интервью (3–5 формулировок с проверочными вопросами).
+            </span>
+          </div>
+        </Card>
+
+        {/* ============ GITHUB DEEPSCAN v3.5 ============ */}
+        <Card
+          className="mb-6 border-primary/30 bg-primary/[0.04] p-6"
+          data-testid="module-github-deepscan"
+        >
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="rounded-md bg-primary/15 p-2 text-primary">
+              <Github className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-lg font-semibold">GitHub DeepScan</div>
+                <span className="rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-primary">
+                  v3.5
+                </span>
+                <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-emerald-400">
+                  включён по умолчанию
+                </span>
+              </div>
+              <div className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                Глубокий анализ публичного GitHub-профиля кандидата
+              </div>
+            </div>
+          </div>
+
+          <p className="mb-5 text-sm leading-relaxed text-muted-foreground">
+            Модуль автоматически извлекает GitHub-хэндл из резюме (или принимает
+            вручную) и строит SB-Score по публичным данным: технологический стек,
+            ритм коммитов по часам МСК, риск-сигналы и OCEAN-гипотезы.
+            Все выводы — гипотезы с permalink-доказательствами, не диагноз.
+          </p>
+
+          <div className="mb-5 rounded-md border border-border bg-background/60 p-4">
+            <div className="mb-3 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              3 субскора в SB-Score
+            </div>
+            <div className="grid gap-2 md:grid-cols-3">
+              <AxisRow
+                icon={<Code2 className="h-3.5 w-3.5" />}
+                title="Tech Score"
+                desc="Оригинальные репо, звёзды, возраст аккаунта, глубина по основному языку."
+              />
+              <AxisRow
+                icon={<Clock className="h-3.5 w-3.5" />}
+                title="Behavior Score"
+                desc="Регулярность коммитов, доля в рабочие часы МСК, активность/неделю."
+              />
+              <AxisRow
+                icon={<ShieldAlert className="h-3.5 w-3.5" />}
+                title="Risk Score (инв.)"
+                desc="Секреты в коммитах, NSFW, мунлайтинг, слабая идентичность, расхождение таймзоны."
+              />
+            </div>
+          </div>
+
+          <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-[11px] text-amber-300/90">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              Гарды: анализируем только публичные данные. При rate-limit GitHub API —
+              graceful degradation. Для снятия лимитов можно настроить серверный GITHUB_TOKEN.
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+            <span>
+              Каждый риск-флаг подкрепляется permalink-и на конкретные коммиты или репозитории.
             </span>
           </div>
         </Card>
