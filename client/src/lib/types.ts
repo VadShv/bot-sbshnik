@@ -66,6 +66,10 @@ export type {
   AcidAnalysis,
   LinguisticAuditVerdict,
   LinguisticAudit,
+  // AI Detector v3.7.0
+  AIDetectorVerdict,
+  AIDetectorMarker,
+  AIDetectorReport,
   // Team Fit / Fit Guard v3 (v3.4)
   TeamFitReport,
   OceanScores,

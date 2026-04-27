@@ -611,7 +611,7 @@ function verdictLabel(v: LinguisticAuditVerdict | "real" | "ambiguous" | "constr
   }
 }
 
-function LinguisticSection({ audit }: { audit: LinguisticAudit }) {
+export function LinguisticSection({ audit }: { audit: LinguisticAudit }) {
   const [open, setOpen] = useState<"liwc" | "rm" | "cl" | "acid" | null>("liwc");
   const toggle = (k: "liwc" | "rm" | "cl" | "acid") => setOpen(open === k ? null : k);
 
@@ -1032,13 +1032,17 @@ function CandidateDossierSummary({
   // 1. Базовая проверка
   if (baseReport) {
     const vb = verdictBadgeBase(baseReport.verdict);
+    const ai = baseReport.aiDetector;
+    const aiPart = ai
+      ? ` · AI ${ai.aiScore}/100${ai.triggeredLinguistic ? " + лингвистика" : ""}`
+      : "";
     rows.push({
       key: "base",
       title: "Базовая проверка",
       icon: ShieldCheck,
       available: true,
       primary: `${vb.label} · ${baseReport.totalScore}/100`,
-      secondary: `риски ${baseReport.riskScore} · инфляция ${baseReport.inflationScore} · волки ${baseReport.wolvesScore}`,
+      secondary: `риски ${baseReport.riskScore} · инфляция ${baseReport.inflationScore} · волки ${baseReport.wolvesScore}${aiPart}`,
       tone: baseReport.verdict,
     });
   } else {
@@ -1266,6 +1270,12 @@ function buildCombinedReportHtml(opts: {
             : ""}
          ${baseReport.redFlags && baseReport.redFlags.length > 0
             ? `<p><b>Красные флаги:</b></p><ul>${baseReport.redFlags.map((f: any) => `<li>${escapeHtml(f.title || f.category || "флаг")}: ${escapeHtml(f.explanation || "")}</li>`).join("")}</ul>`
+            : ""}
+         ${baseReport.aiDetector
+            ? `<p><b>AI-детектор:</b> AI-score ${baseReport.aiDetector.aiScore}/100 · вердикт «${escapeHtml(baseReport.aiDetector.verdict)}» · уверенность модели ${baseReport.aiDetector.confidence}%${baseReport.aiDetector.triggeredLinguistic ? " · запущен лингвистический слой" : ""}</p>${baseReport.aiDetector.summary ? `<p>${escapeHtml(baseReport.aiDetector.summary)}</p>` : ""}${baseReport.aiDetector.markers && baseReport.aiDetector.markers.length > 0 ? `<ul>${baseReport.aiDetector.markers.map((m: any) => `<li><b>${escapeHtml(m.type || "")}:</b> ${escapeHtml(m.description || "")}${m.example ? ` — «${escapeHtml(m.example)}»` : ""}</li>`).join("")}</ul>` : ""}`
+            : ""}
+         ${baseReport.linguisticAudit
+            ? `<p><b>Лингвистический аудит (базовый, условный):</b> вердикт «${escapeHtml(baseReport.linguisticAudit.verdict)}» — ${escapeHtml(baseReport.linguisticAudit.summary || "")}</p>`
             : ""}`,
       )
     : section("1. Базовая проверка", "<p><i>Данные не загружены.</i></p>");

@@ -554,6 +554,43 @@ export type WolfAudit = {
   injectionNote?: string;
 };
 
+// ============================================================
+// AI Detector v1.0 — детектор машинной обработки текста резюме
+// ============================================================
+// «Привратник» базовой проверки: оценивает вероятность, что резюме
+// написано/обработано языковой моделью. При высоком балле
+// запускается углублённый лингвистический аудит (обычно живущий в пайплайне).
+
+export type AIDetectorVerdict =
+  | "human_written"      // написано человеком
+  | "lightly_edited"     // лёгкая машинная чистка / перевод
+  | "heavily_edited"     // сильная переработка машиной
+  | "ai_generated";      // практически целиком сгенерировано ИИ
+
+export type AIDetectorMarker = {
+  type:
+    | "cliche"           // типичные Шаблонные LLM-клише
+    | "symmetry"         // идеальные параллельные конструкции / списки
+    | "smoothness"       // неестественно «гладкий» слог без burstiness
+    | "vocabulary"       // лексика, характерная для ЧатGPT/Yandex
+    | "structure"        // излишне формальная / энциклопедичная структура
+    | "hedging"          // хеджинг-обороты LLM («важно отметить» и т. п.)
+    | "other";
+  description: string;   // человеческое описание маркера
+  example?: string;      // фрагмент из резюме (при наличии)
+};
+
+export type AIDetectorReport = {
+  version: "1.0";
+  aiScore: number;                    // 0–100, где 100 = точно ИИ
+  verdict: AIDetectorVerdict;
+  confidence: number;                 // 0–100, уверенность модели
+  summary: string;                    // 1–2 предложения для ОТЧёТА
+  markers: AIDetectorMarker[];        // найденные маркеры
+  triggeredLinguistic: boolean;       // был ли дополнительно запущен лингвистический слой
+  threshold: number;                  // порог запуска лингвистики (по умолчанию 60)
+};
+
 export type FullReport = {
   candidateName: string | null;
   riskScore: number;
@@ -573,6 +610,8 @@ export type FullReport = {
   sbRecommendations: string[];
   recruiterActionPlan?: RecruiterAction[];    // новое: упорядоченный план
   wolfAudit?: WolfAudit;                      // Wolf Detector v1.0
+  aiDetector?: AIDetectorReport;              // v3.7.0 — детектор машинной обработки
+  linguisticAudit?: LinguisticAudit;          // v3.7.0 — запускается условно при высоком aiScore
   createdAt: number;
 };
 

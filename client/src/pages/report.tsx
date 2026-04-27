@@ -9,6 +9,8 @@ import { VerdictBadge } from "@/components/VerdictBadge";
 import { ScoreGauge } from "@/components/ScoreGauge";
 import { FindingCard } from "@/components/FindingCard";
 import { WolfReport } from "@/components/WolfReport";
+import { AiDetectorReportBlock } from "@/components/AiDetectorReport";
+import { LinguisticSection } from "@/components/PipelineReport";
 import { ChatTab } from "@/components/ChatTab";
 import { TeamFitTab } from "@/components/TeamFitTab";
 import { GitHubDeepScanTab } from "@/components/GitHubDeepScanTab";
@@ -416,6 +418,32 @@ export default function ReportPage() {
             noInnerPadding
           >
             <WolfReport audit={r.wolfAudit} />
+          </CollapsibleSection>
+        )}
+
+        {/* AI Detector v3.7.0 — анализ машинной обработки резюме */}
+        {r.aiDetector && (
+          <CollapsibleSection
+            icon={<Bot className="h-4 w-4 text-primary" />}
+            title="Анализ машинной обработки"
+            meta="AI-детектор резюме (v3.7.0)"
+            dataTestId="block-ai-detector"
+            noInnerPadding
+          >
+            <AiDetectorReportBlock report={r.aiDetector} />
+          </CollapsibleSection>
+        )}
+
+        {/* Условный лингвистический слой при высоком aiScore */}
+        {r.linguisticAudit && (
+          <CollapsibleSection
+            icon={<Sparkles className="h-4 w-4 text-primary" />}
+            title="Лингвистический аудит"
+            meta="запущен из-за подозрений на машинную генерацию"
+            dataTestId="block-base-linguistic"
+            noInnerPadding
+          >
+            <LinguisticSection audit={r.linguisticAudit} />
           </CollapsibleSection>
         )}
 

@@ -35,8 +35,11 @@ import type {
   AttitudeToFormer,
   TimePressure,
   References,
+  LinguisticAudit,
 } from "@shared/schema";
 import { runPipelineAnalysis } from "./pipelineAnalyzer";
+import { runAiDetector, AI_DETECTOR_DEFAULT_THRESHOLD } from "./aiDetector";
+import { runLinguisticAudit } from "./linguistics";
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -372,14 +375,30 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       const det = runDetectors(text);
 
-      // Параллельно: базовый анализ + усиленный Wolf Detector v1.0
-      const [llm, wolfAuditResult] = await Promise.all([
+      // Параллельно: базовый анализ + Wolf Detector v1.0 + AI Detector (v3.7.0)
+      const [llm, wolfAuditResult, aiDetectorResult] = await Promise.all([
         yandexAnalyze(text, [...det.risks, ...det.inflation, ...det.wolves]),
         runWolfAudit(text, {}).catch((err) => {
           console.error("Wolf Detector error:", err);
           return null;
         }),
+        runAiDetector(text).catch((err) => {
+          console.error("AI Detector error:", err);
+          return null;
+        }),
       ]);
+
+      // Условный запуск лингвистического слоя при высоком aiScore
+      let aiDetectorReport = aiDetectorResult || undefined;
+      let baseLinguisticAudit: LinguisticAudit | undefined;
+      if (aiDetectorReport && aiDetectorReport.aiScore >= aiDetectorReport.threshold) {
+        try {
+          baseLinguisticAudit = runLinguisticAudit(text, "");
+          aiDetectorReport = { ...aiDetectorReport, triggeredLinguistic: true };
+        } catch (err) {
+          console.error("Linguistic audit (base check) error:", err);
+        }
+      }
 
       const risksAll = mergeFindings(det.risks, llm.risks.findings);
       const inflationAll = mergeFindings(det.inflation, llm.inflation.findings);
@@ -454,6 +473,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         sbRecommendations: llm.sbRecommendations,
         recruiterActionPlan,
         wolfAudit: wolfAuditResult || undefined,
+        aiDetector: aiDetectorReport,
+        linguisticAudit: baseLinguisticAudit,
         createdAt: Date.now(),
       };
 
@@ -757,6 +778,28 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         wolves: { score: baseReport.wolves.score, summary: baseReport.wolves.summary, findings: baseReport.wolves.findings.slice(0, 10).map((f) => ({ title: f.title, severity: f.severity, description: f.description })) },
         redFlags: baseReport.redFlags?.slice(0, 8),
         positiveSignals: baseReport.positiveSignals?.slice(0, 8),
+        aiDetector: baseReport.aiDetector
+          ? {
+              aiScore: baseReport.aiDetector.aiScore,
+              verdict: baseReport.aiDetector.verdict,
+              confidence: baseReport.aiDetector.confidence,
+              summary: baseReport.aiDetector.summary,
+              triggeredLinguistic: baseReport.aiDetector.triggeredLinguistic,
+              threshold: baseReport.aiDetector.threshold,
+              markers: (baseReport.aiDetector.markers || []).slice(0, 6).map((m) => ({
+                type: m.type,
+                description: m.description,
+                example: m.example,
+              })),
+            }
+          : null,
+        linguisticAudit: baseReport.linguisticAudit
+          ? {
+              verdict: baseReport.linguisticAudit.verdict,
+              riskScore: baseReport.linguisticAudit.riskScore,
+              summary: baseReport.linguisticAudit.summary,
+            }
+          : null,
       };
       const pipelineSlim = pipelineReport
         ? {
