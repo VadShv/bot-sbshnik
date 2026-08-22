@@ -1,158 +1,17 @@
 import type { Finding, Evidence, VerificationStep, RedFlag, RecruiterAction, SubcategoryScore, FindingCategory } from "@shared/schema";
 import { isPhantom, stripPhantomText, stripPhantomArray } from "./pipelineAnalyzer";
+import { llmComplete } from "./llm/provider";
+import type { LlmMessage } from "./llm/http";
 
-const YANDEX_API_KEY = process.env.YANDEX_API_KEY || "";
-const YANDEX_FOLDER_ID = process.env.YANDEX_FOLDER_ID || "";
-const YANDEX_MODEL = process.env.YANDEX_MODEL || "yandexgpt";
+export type YandexMessage = LlmMessage;
 
-// Два эндпоинта Yandex Cloud AI Studio:
-//   1) Foundation Models API (native) — для yandexgpt, yandexgpt-lite, llama, mistral и др.
-//   2) OpenAI-compatible API — обязательно для Qwen3, gpt-oss и новых open-source моделей.
-const ENDPOINT_NATIVE = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion";
-const ENDPOINT_OPENAI = "https://llm.api.cloud.yandex.net/v1/chat/completions";
-
-/** Нужно ли использовать OpenAI-совместимый эндпоинт для этой модели. */
-function requiresOpenAIApi(model: string): boolean {
-  const m = model.toLowerCase();
-  return (
-    m.startsWith("qwen") ||
-    m.startsWith("gpt-oss") ||
-    m.startsWith("deepseek") ||
-    m.startsWith("gemma") ||
-    m.includes("qwen3")
-  );
-}
-
-type YandexMessage = { role: "system" | "user" | "assistant"; text: string };
-
-// Таймаут одного запроса к Yandex GPT и число повторных попыток при 429/5xx/абортах.
-const YANDEX_TIMEOUT_MS = 30_000;
-const YANDEX_MAX_RETRIES = 2;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-/** fetch с таймаутом и экспоненциальным backoff-ретраем на транзиентные ошибки. */
-async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
-  let lastErr: unknown = new Error("Yandex GPT request failed");
-  for (let attempt = 0; attempt <= YANDEX_MAX_RETRIES; attempt++) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), YANDEX_TIMEOUT_MS);
-    try {
-      const res = await fetch(url, { ...init, signal: controller.signal });
-      clearTimeout(timeout);
-      if ((res.status === 429 || res.status >= 500) && attempt < YANDEX_MAX_RETRIES) {
-        await sleep(Math.min(2000, 250 * 2 ** attempt));
-        continue;
-      }
-      return res;
-    } catch (err) {
-      clearTimeout(timeout);
-      lastErr = err;
-      if (attempt < YANDEX_MAX_RETRIES) {
-        await sleep(Math.min(2000, 250 * 2 ** attempt));
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw lastErr;
-}
-
+/** Тонкая обёртка над llmComplete для обратной совместимости существующих вызовов.
+ *  Реальная маршрутизация (активный провайдер + fallback) — в ./llm/provider. */
 export async function yandexComplete(
   messages: YandexMessage[],
   opts: { temperature?: number; maxTokens?: number } = {}
 ): Promise<string> {
-  if (!YANDEX_API_KEY) {
-    throw new Error("YANDEX_API_KEY не задан в окружении сервера.");
-  }
-  if (!YANDEX_FOLDER_ID) {
-    throw new Error("YANDEX_FOLDER_ID не задан в окружении сервера.");
-  }
-
-  const modelUri = `gpt://${YANDEX_FOLDER_ID}/${YANDEX_MODEL}/latest`;
-  const useOpenAI = requiresOpenAIApi(YANDEX_MODEL);
-
-  if (useOpenAI) {
-    return await completeViaOpenAI(modelUri, messages, opts);
-  }
-  return await completeViaNative(modelUri, messages, opts);
-}
-
-/** Вызов через native Yandex Foundation Models API (yandexgpt и др.). */
-async function completeViaNative(
-  modelUri: string,
-  messages: YandexMessage[],
-  opts: { temperature?: number; maxTokens?: number }
-): Promise<string> {
-  const body = {
-    modelUri,
-    completionOptions: {
-      stream: false,
-      temperature: opts.temperature ?? 0.2,
-      maxTokens: String(opts.maxTokens ?? 2000),
-      reasoningOptions: { mode: "DISABLED" },
-    },
-    messages,
-  };
-
-  const res = await fetchWithRetry(ENDPOINT_NATIVE, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Api-Key ${YANDEX_API_KEY}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`Yandex GPT (native) error ${res.status}: ${txt}`);
-  }
-  const data: any = await res.json();
-  const text = data?.result?.alternatives?.[0]?.message?.text;
-  if (!text) throw new Error("Yandex GPT (native): пустой ответ");
-  return text as string;
-}
-
-/** Вызов через OpenAI-совместимый API (Qwen3, gpt-oss и др.). */
-async function completeViaOpenAI(
-  modelUri: string,
-  messages: YandexMessage[],
-  opts: { temperature?: number; maxTokens?: number }
-): Promise<string> {
-  // Конвертация формата сообщений
-  const openaiMessages = messages.map((m) => ({ role: m.role, content: m.text }));
-
-  const body = {
-    model: modelUri,
-    messages: openaiMessages,
-    temperature: opts.temperature ?? 0.2,
-    max_tokens: opts.maxTokens ?? 2000,
-  };
-
-  const res = await fetchWithRetry(ENDPOINT_OPENAI, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Api-Key ${YANDEX_API_KEY}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`Yandex GPT (OpenAI API) error ${res.status}: ${txt}`);
-  }
-  const data: any = await res.json();
-  const choice = data?.choices?.[0]?.message;
-  // У gpt-oss может быть content=null при reasoning-ответе; у Qwen3 всегда конкретный текст в content.
-  const text: string | null | undefined = choice?.content ?? choice?.reasoning_content;
-  if (!text) {
-    throw new Error(`Yandex GPT (OpenAI API): пустой ответ. finish_reason=${data?.choices?.[0]?.finish_reason ?? "?"}`);
-  }
-  return text as string;
+  return llmComplete(messages, opts);
 }
 
 // ===== Промпт-инженерия: жёсткий СБ-режим + продвинутая методология =====

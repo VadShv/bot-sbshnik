@@ -41,6 +41,26 @@ import type {
 import { runPipelineAnalysis } from "./pipelineAnalyzer";
 import { runAiDetector, AI_DETECTOR_DEFAULT_THRESHOLD } from "./aiDetector";
 import { runLinguisticAudit } from "./linguistics";
+import {
+  getAppConfigSummary,
+  listProvidersMasked,
+  createProvider,
+  updateProvider,
+  deleteProvider,
+  setActiveProvider,
+  setFallbackProvider,
+  updateThresholds,
+  updateToggles,
+  listPromptVersions,
+  savePromptVersion,
+  activatePromptVersion,
+  listJdTemplates,
+  createJdTemplate,
+  updateJdTemplate,
+  deleteJdTemplate,
+  listAuditLog,
+} from "./settings";
+import type { PromptKey } from "@shared/schema";
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -302,6 +322,142 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       yandexConfigured: Boolean(process.env.YANDEX_API_KEY),
       time: Date.now(),
     });
+  });
+
+  // ===================== Личный кабинет: настройки =====================
+  app.get("/api/settings", async (_req, res) => {
+    res.json(getAppConfigSummary());
+  });
+
+  app.put("/api/settings/thresholds", async (req, res) => {
+    try {
+      res.json(updateThresholds(req.body || {}));
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.put("/api/settings/toggles", async (req, res) => {
+    try {
+      res.json(updateToggles(req.body || {}));
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // --- Провайдеры LLM ---
+  app.get("/api/settings/providers", async (_req, res) => {
+    res.json(listProvidersMasked());
+  });
+
+  app.post("/api/settings/providers", async (req, res) => {
+    try {
+      const { name, protocol, endpoint, model, folderId, apiKey, apiKeyEnv } = req.body || {};
+      if (!name || !protocol || !endpoint || !model) {
+        return res.status(400).json({ message: "name, protocol, endpoint, model обязательны" });
+      }
+      if (protocol !== "yandex-native" && protocol !== "openai-compatible") {
+        return res.status(400).json({ message: "protocol: yandex-native | openai-compatible" });
+      }
+      res.status(201).json(
+        createProvider({ name, protocol, endpoint, model, folderId: folderId ?? null, apiKey, apiKeyEnv: apiKeyEnv ?? null }),
+      );
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.put("/api/settings/providers/:id", async (req, res) => {
+    try {
+      const updated = updateProvider(req.params.id, req.body || {});
+      if (!updated) return res.status(404).json({ message: "Провайдер не найден" });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/settings/providers/:id", async (req, res) => {
+    const ok = deleteProvider(req.params.id);
+    if (!ok) return res.status(404).json({ message: "Провайдер не найден" });
+    res.json({ ok: true });
+  });
+
+  app.post("/api/settings/providers/:id/activate", async (req, res) => {
+    const ok = setActiveProvider(req.params.id);
+    if (!ok) return res.status(404).json({ message: "Провайдер не найден" });
+    res.json({ ok: true });
+  });
+
+  app.post("/api/settings/providers/:id/fallback", async (req, res) => {
+    const ok = setFallbackProvider(req.params.id);
+    if (!ok) return res.status(404).json({ message: "Провайдер не найден" });
+    res.json({ ok: true });
+  });
+
+  app.post("/api/settings/fallback/clear", async (_req, res) => {
+    setFallbackProvider(null);
+    res.json({ ok: true });
+  });
+
+  // --- Промпты ---
+  app.get("/api/settings/prompts", async (_req, res) => {
+    res.json(listPromptVersions());
+  });
+
+  app.get("/api/settings/prompts/:key", async (req, res) => {
+    res.json(listPromptVersions(req.params.key as PromptKey));
+  });
+
+  app.post("/api/settings/prompts/:key", async (req, res) => {
+    try {
+      const { content } = req.body || {};
+      if (!content || typeof content !== "string") {
+        return res.status(400).json({ message: "content обязателен (строка)" });
+      }
+      res.status(201).json(savePromptVersion(req.params.key as PromptKey, content));
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/settings/prompts/:key/versions/:v/activate", async (req, res) => {
+    const ok = activatePromptVersion(req.params.key as PromptKey, Number(req.params.v));
+    if (!ok) return res.status(404).json({ message: "Версия не найдена" });
+    res.json({ ok: true });
+  });
+
+  // --- Шаблоны вакансий (JD) ---
+  app.get("/api/settings/jd-templates", async (_req, res) => {
+    res.json(listJdTemplates());
+  });
+
+  app.post("/api/settings/jd-templates", async (req, res) => {
+    try {
+      const { name, content } = req.body || {};
+      if (!name || !content) return res.status(400).json({ message: "name и content обязательны" });
+      res.status(201).json(createJdTemplate(name, content));
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.put("/api/settings/jd-templates/:id", async (req, res) => {
+    const updated = updateJdTemplate(req.params.id, req.body || {});
+    if (!updated) return res.status(404).json({ message: "Шаблон не найден" });
+    res.json(updated);
+  });
+
+  app.delete("/api/settings/jd-templates/:id", async (req, res) => {
+    const ok = deleteJdTemplate(req.params.id);
+    if (!ok) return res.status(404).json({ message: "Шаблон не найден" });
+    res.json({ ok: true });
+  });
+
+  // --- Журнал изменений ---
+  app.get("/api/settings/audit-log", async (req, res) => {
+    const limit = Math.min(500, Number(req.query.limit) || 100);
+    res.json(listAuditLog(limit));
   });
 
   // Извлечение текста из PDF/DOCX
