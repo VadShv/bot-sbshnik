@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { runDetectors, extractPeriods, aggregateCategoryScore } from "../server/detectors";
+import { DEFAULT_THRESHOLDS } from "../server/defaults";
 
 describe("extractPeriods", () => {
   it("парсит «Месяц YYYY — Месяц YYYY»", () => {
@@ -87,6 +88,18 @@ describe("runDetectors — кириллические границы (фикс \
   it("детектит «в 10 раз» как нереалистичный KPI", () => {
     const det = runDetectors("опыт 2020-2024\nувеличил выручку в 10 раз");
     expect(det.inflation.some((f) => f.id === "unrealistic-kpi")).toBe(true);
+  });
+});
+
+describe("runDetectors — пороги из настроек (M4)", () => {
+  it("gapMonths управляет детекцией пробела", () => {
+    const text = "январь 2020 — март 2020\nКомпания А\n\nянварь 2022 — март 2022\nКомпания Б";
+    // пробел между мар 2020 и янв 2022 ≈ 22 мес
+    const detDefault = runDetectors(text);
+    expect(detDefault.risks.some((f) => f.id === "gap")).toBe(true);
+    // с gapMonths=30 → 22 мес < 30 → пробел не детектится
+    const detWide = runDetectors(text, { thresholds: { ...DEFAULT_THRESHOLDS, gapMonths: 30 } });
+    expect(detWide.risks.some((f) => f.id === "gap")).toBe(false);
   });
 });
 

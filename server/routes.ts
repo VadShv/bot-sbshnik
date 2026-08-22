@@ -61,6 +61,8 @@ import {
   listAuditLog,
   getPrompt,
   getJdTemplate,
+  getToggles,
+  getThresholds,
 } from "./settings";
 import type { PromptKey } from "@shared/schema";
 import { DEFAULT_ANALYZE_SYSTEM_PROMPT } from "./yandex";
@@ -493,7 +495,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!resumeText || typeof resumeText !== "string") {
         return res.status(400).json({ message: "resumeText обязателен" });
       }
-      const det = runDetectors(resumeText);
+      const det = runDetectors(resumeText, { thresholds: getThresholds() });
       const key = (promptKey || "analyze_system") as PromptKey;
       const systemPrompt = getPrompt(key) ?? DEFAULT_PROMPTS[key];
       const jd = jdTemplateId ? getJdTemplate(jdTemplateId) : null;
@@ -614,11 +616,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         });
       }
 
-      const det = runDetectors(text);
+      const toggles = getToggles();
+      const thresholds = getThresholds();
+      const jdTemplate = req.body?.jdTemplateId ? getJdTemplate(String(req.body.jdTemplateId)) : null;
+      const jdContent = jdTemplate?.content;
+      const det = toggles.detectors
+        ? runDetectors(text, { thresholds })
+        : { risks: [], inflation: [], wolves: [] };
 
       // Параллельно: базовый анализ + Wolf Detector v1.0 + AI Detector (v3.7.0)
       const [llm, wolfAuditResult, aiDetectorResult] = await Promise.all([
-        yandexAnalyze(text, [...det.risks, ...det.inflation, ...det.wolves]).catch((err) => {
+        yandexAnalyze(text, [...det.risks, ...det.inflation, ...det.wolves], jdContent).catch((err) => {
           console.error("Yandex analyze error:", err);
           return {
             candidateName: null,
@@ -634,20 +642,24 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
             recruiterActionPlan: [],
           } as YandexAnalysis;
         }),
-        runWolfAudit(text, {}).catch((err) => {
-          console.error("Wolf Detector error:", err);
-          return null;
-        }),
-        runAiDetector(text).catch((err) => {
-          console.error("AI Detector error:", err);
-          return null;
-        }),
+        (toggles.wolfAudit
+          ? runWolfAudit(text, { vacancyTitle: jdTemplate?.name, vacancyRequirements: jdContent }).catch((err) => {
+              console.error("Wolf Detector error:", err);
+              return null;
+            })
+          : Promise.resolve(null)),
+        (toggles.aiDetector
+          ? runAiDetector(text, thresholds.aiDetectorThreshold).catch((err) => {
+              console.error("AI Detector error:", err);
+              return null;
+            })
+          : Promise.resolve(null)),
       ]);
 
       // Условный запуск лингвистического слоя при высоком aiScore
       let aiDetectorReport = aiDetectorResult || undefined;
       let baseLinguisticAudit: LinguisticAudit | undefined;
-      if (aiDetectorReport && aiDetectorReport.aiScore >= aiDetectorReport.threshold) {
+      if (toggles.linguistic && aiDetectorReport && aiDetectorReport.aiScore >= aiDetectorReport.threshold) {
         try {
           baseLinguisticAudit = runLinguisticAudit(text, "");
           aiDetectorReport = { ...aiDetectorReport, triggeredLinguistic: true };
@@ -887,8 +899,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!nForm) {
         return res.status(400).json({ message: "Не заполнена форма рекрутера." });
       }
-      const nEtk = normalizeEtk(etk);
-      const nEtkRaw = typeof etkText === "string" ? etkText.slice(0, 200000) : "";
+      const toggles = getToggles();
+      // Тоггл «Верификация опыта (ЭТК)»: если выключен — не передаём ЭТК, LLM вернёт not_checked.
+      const nEtk = toggles.etcVerification ? normalizeEtk(etk) : ({ records: [], source: "none" } as EtkStructured);
+      const nEtkRaw = toggles.etcVerification && typeof etkText === "string" ? etkText.slice(0, 200000) : "";
       // parentCheckId — связь с исходной обычной проверкой (checks.id)
       // С v3.3 пайплайн создаётся ТОЛЬКО на базе существующей базовой проверки.
       if (typeof parentCheckId !== "string" || !parentCheckId.trim()) {
@@ -1229,6 +1243,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         res.status(404).json({ message: "Проверка не найдена" });
         return;
       }
+      if (!getToggles().teamFit) {
+        return res.status(403).json({ message: "Модуль Team Fit отключён в настройках." });
+      }
       const analysis = await runFitGuard(check.resumeText);
       const saved = await storage.createTeamFitReport({
         id: nanoid(),
@@ -1327,6 +1344,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const handleOverride =
         typeof req.body?.githubHandle === "string" ? req.body.githubHandle : undefined;
 
+      if (!getToggles().githubDeepScan) {
+        return res.status(403).json({ message: "Модуль GitHub DeepScan отключён в настройках." });
+      }
       const analysis = await runGitHubDeepScan({
         resumeText: check.resumeText,
         handleOverride,

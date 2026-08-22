@@ -1,5 +1,5 @@
 import { yandexComplete } from "./yandex";
-import { getPrompt } from "./settings";
+import { getPrompt, getThresholds } from "./settings";
 import { buildTimeline, formatMonths } from "./timeline";
 import { runLinguisticAudit } from "./linguistics";
 import type {
@@ -674,6 +674,7 @@ export function deriveResolution(
     loyalty: LoyaltyScore;
   },
 ): FinalResolution {
+  const th = getThresholds();
   // Собираем условия (только релевантные, дедуплицированные)
   const conditionsSet = new Set<string>();
   if (modules.motivation.redFlags.length) {
@@ -700,18 +701,18 @@ export function deriveResolution(
     };
   }
   // 2) CS < 50 → NOT_RECOMMENDED
-  if (compositeScore < 50) {
+  if (compositeScore < th.csRejectBelow) {
     return {
       code: "NOT_RECOMMENDED",
       label: "❌ НЕ РЕКОМЕНДОВАН",
       compositeScore,
       reason,
       conditions: [],
-      blockingFactor: `Composite Score = ${compositeScore} < 50`,
+      blockingFactor: `Composite Score = ${compositeScore} < ${th.csRejectBelow}`,
     };
   }
   // 3) CS ≥ 70 + not_checked → UNVERIFIED
-  if (compositeScore >= 70 && verificationStatus === "not_checked") {
+  if (compositeScore >= th.csRecommendAbove && verificationStatus === "not_checked") {
     return {
       code: "UNVERIFIED",
       label: "⚠️ РЕКОМЕНДОВАН (опыт не верифицирован)",
@@ -725,7 +726,7 @@ export function deriveResolution(
   }
   // 4) CS ≥ 70 + confirmed/partial → RECOMMENDED
   if (
-    compositeScore >= 70 &&
+    compositeScore >= th.csRecommendAbove &&
     (verificationStatus === "confirmed" || verificationStatus === "partial")
   ) {
     return {

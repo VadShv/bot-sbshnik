@@ -32,7 +32,7 @@ export const DEFAULT_ANALYZE_SYSTEM_PROMPT = `Ты — ведущий анали
 - Тон сухой, юридический, экспертный. Без комплиментов и маркетинга.
 - ВЕРНИ СТРОГО JSON без markdown и комментариев.`;
 
-const ANALYZE_PROMPT = (resumeText: string, deterministicFindings: Finding[]) => {
+const ANALYZE_PROMPT = (resumeText: string, deterministicFindings: Finding[], jdContent?: string) => {
   const nowIso = new Date().toISOString().slice(0, 10);
   const nowYear = new Date().getUTCFullYear();
   const nowMonth = new Date().getUTCMonth() + 1;
@@ -169,7 +169,12 @@ ${deterministicFindings.length === 0 ? "— ничего автоматичес�
 - recruiterActionPlan — упорядоченный план от must→nice, 3-7 шагов. Это НЕ копия interviewQuestions, а пошаговая инструкция: звонок→техинтервью→референс-чек→документы→OSINT.
 - НЕ ПРИДУМЫВАЙ ЦИТАТЫ — только дословно из текста.
 
+${jdContent ? `==============================
+ТРЕБОВАНИЯ ВАКАНСИИ (JD)
 ==============================
+${jdContent.slice(0, 4000)}
+
+` : ""}==============================
 РЕЗЮМЕ
 ==============================
 """
@@ -312,12 +317,13 @@ function normalizeRecruiterActionPlan(arr: any): RecruiterAction[] {
 
 export async function yandexAnalyze(
   resumeText: string,
-  deterministicFindings: Finding[]
+  deterministicFindings: Finding[],
+  jdContent?: string,
 ): Promise<YandexAnalysis> {
   const raw = await yandexComplete(
     [
       { role: "system", text: getPrompt("analyze_system") ?? DEFAULT_ANALYZE_SYSTEM_PROMPT },
-      { role: "user", text: ANALYZE_PROMPT(resumeText, deterministicFindings) },
+      { role: "user", text: ANALYZE_PROMPT(resumeText, deterministicFindings, jdContent) },
     ],
     { temperature: 0.15, maxTokens: 7000 }
   );

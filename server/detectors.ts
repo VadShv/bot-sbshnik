@@ -1,4 +1,5 @@
-import type { Finding } from "@shared/schema";
+import type { Finding, Thresholds } from "@shared/schema";
+import { DEFAULT_THRESHOLDS } from "./defaults";
 
 // ===== УТИЛИТЫ =====
 
@@ -100,7 +101,7 @@ function endOf(p: Period, now: Date): Date {
 
 // ===== ДЕТЕКТОРЫ РИСКОВ =====
 
-function findingsChronology(text: string, now: Date): Finding[] {
+function findingsChronology(text: string, now: Date, th: Thresholds): Finding[] {
   const findings: Finding[] = [];
   const periods = extractPeriods(text);
   if (periods.length < 2) return findings;
@@ -132,7 +133,7 @@ function findingsChronology(text: string, now: Date): Finding[] {
       const aEnd = endOf(a, now);
       const overlap = Math.min(aEnd.getTime(), endOf(b, now).getTime()) - b.start.getTime();
       const days = overlap / (1000 * 60 * 60 * 24);
-      if (days > 60) {
+      if (days > th.overlapMonths * 30) {
         findings.push({
           id: "overlap",
           title: "Пересечение периодов занятости",
@@ -151,7 +152,7 @@ function findingsChronology(text: string, now: Date): Finding[] {
     const a = sorted[i], b = sorted[i + 1];
     const aEnd = endOf(a, now);
     const gap = (b.start.getTime() - aEnd.getTime()) / (1000 * 60 * 60 * 24);
-    if (gap > 180) {
+    if (gap > th.gapMonths * 30) {
       findings.push({
         id: "gap",
         title: "Необъяснённый пробел в опыте",
@@ -275,7 +276,7 @@ function findingsStopWords(text: string): Finding[] {
 
 // ===== ДЕТЕКТОРЫ НАКРУТКИ ОПЫТА =====
 
-function findingsInflation(text: string, now: Date): Finding[] {
+function findingsInflation(text: string, now: Date, th: Thresholds): Finding[] {
   const findings: Finding[] = [];
   const periods = extractPeriods(text);
 
@@ -289,7 +290,7 @@ function findingsInflation(text: string, now: Date): Finding[] {
 
   // Грейд vs стаж
   const hasSenior = /(?<![а-яА-ЯёЁa-z0-9])(senior|сеньор|ведущ\w+|главный|lead|principal|tech\s*lead|head\s*of|руководитель\s+отдела|директор|архитектор|architect|CTO|CIO|CPO|CFO)(?![а-яА-ЯёЁa-z0-9])/i.test(text);
-  if (hasSenior && years > 0 && years < 3) {
+  if (hasSenior && years > 0 && years < th.seniorMinYears) {
     findings.push({
       id: "senior-low-exp",
       title: "Senior-грейд при малом стаже",
@@ -307,7 +308,7 @@ function findingsInflation(text: string, now: Date): Finding[] {
     const ev: string[] = [];
     for (const km of kpiMatches.slice(0, 5)) {
       const n = parseInt(km.replace(/\D/g, ""));
-      if ((km.includes("%") && n >= 300) || (/раз/i.test(km) && n >= 10) || /[×x]/i.test(km)) {
+      if ((km.includes("%") && n >= th.kpiPercent) || (/раз/i.test(km) && n >= th.kpiTimes) || /[×x]/i.test(km)) {
         ev.push(km);
       }
     }
@@ -351,7 +352,7 @@ function findingsInflation(text: string, now: Date): Finding[] {
   const techList = text.match(/(?<![a-z0-9])(Python|TypeScript|JavaScript|Java|C\+\+|C#|Go|Ruby|PHP|Swift|Kotlin|Rust|Scala|React|Vue|Angular|Svelte|Next\.?js|Nuxt|Node\.?js|Express|Django|Flask|FastAPI|Spring|Laravel|Rails|\.NET|PostgreSQL|MySQL|MongoDB|Redis|Elasticsearch|Kafka|RabbitMQ|Docker|Kubernetes|Terraform|AWS|GCP|Azure|Git|Jenkins|Linux|Nginx|GraphQL|REST|gRPC|TensorFlow|PyTorch|Kubernetes|Ansible|Prometheus|Grafana)(?![a-z0-9])/gi);
   if (techList) {
     const unique = new Set(techList.map((t) => t.toLowerCase()));
-    if (unique.size >= 25) {
+    if (unique.size >= th.stackInflationCount) {
       findings.push({
         id: "stack-inflation",
         title: "Стек-инфляция",
@@ -413,7 +414,7 @@ function findingsInflation(text: string, now: Date): Finding[] {
 
 // ===== ДЕТЕКТОРЫ «ВОЛКОВ» =====
 
-function findingsWolves(text: string, now: Date): Finding[] {
+function findingsWolves(text: string, now: Date, th: Thresholds): Finding[] {
   const findings: Finding[] = [];
   const periods = extractPeriods(text);
 
@@ -421,9 +422,9 @@ function findingsWolves(text: string, now: Date): Finding[] {
   const shortStints = periods.filter((p) => {
     const end = endOf(p, now);
     const months = (end.getTime() - p.start.getTime()) / (1000 * 60 * 60 * 24 * 30);
-    return months > 0 && months < 9;
+    return months > 0 && months < th.shortStintMonths;
   });
-  if (shortStints.length >= 3) {
+  if (shortStints.length >= th.jobHoppingCount) {
     findings.push({
       id: "job-hopping",
       title: "Серийные короткие контракты",
@@ -476,17 +477,18 @@ export type DetectorResult = {
   wolves: Finding[];
 };
 
-export function runDetectors(text: string): DetectorResult {
+export function runDetectors(text: string, opts?: { thresholds?: Thresholds }): DetectorResult {
   const now = new Date();
+  const th = opts?.thresholds ?? DEFAULT_THRESHOLDS;
   return {
     risks: [
-      ...findingsChronology(text, now),
+      ...findingsChronology(text, now, th),
       ...findingsEducation(text, now),
       ...findingsContacts(text),
       ...findingsStopWords(text),
     ],
-    inflation: findingsInflation(text, now),
-    wolves: findingsWolves(text, now),
+    inflation: findingsInflation(text, now, th),
+    wolves: findingsWolves(text, now, th),
   };
 }
 
