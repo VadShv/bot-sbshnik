@@ -8,6 +8,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: DATABASE_PATH
+        value: /data/data.db
       - key: YANDEX_API_KEY
         sync: false
       - key: YANDEX_FOLDER_ID
@@ -20,5 +22,7 @@ services:
         sync: false
     disk:
       name: sqlite-data
-      mountPath: /opt/render/project/src
+      # При смене mountPath на существующем деплое — перенесите data.db на новый диск,
+      # иначе БД стартует пустой.
+      mountPath: /data
       sizeGB: 1

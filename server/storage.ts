@@ -106,6 +106,52 @@ sqlite.exec(`
     fetch_error TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_github_deepscan_check ON github_deepscan_reports(check_id);
+  CREATE TABLE IF NOT EXISTS llm_providers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    protocol TEXT NOT NULL,
+    endpoint TEXT NOT NULL,
+    model TEXT NOT NULL,
+    folder_id TEXT,
+    api_key_cipher TEXT,
+    api_key_nonce TEXT,
+    api_key_tag TEXT,
+    api_key_env TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS prompt_versions (
+    id TEXT PRIMARY KEY,
+    prompt_key TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    is_active INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_prompt_key ON prompt_versions(prompt_key);
+  CREATE TABLE IF NOT EXISTS app_config (
+    id INTEGER PRIMARY KEY,
+    thresholds_json TEXT NOT NULL,
+    toggles_json TEXT NOT NULL,
+    active_provider_id TEXT,
+    fallback_provider_id TEXT,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS jd_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS settings_audit_log (
+    id TEXT PRIMARY KEY,
+    action TEXT NOT NULL,
+    field TEXT NOT NULL,
+    diff_json TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_audit_created ON settings_audit_log(created_at DESC);
 `);
 
 export const db = drizzle(sqlite);

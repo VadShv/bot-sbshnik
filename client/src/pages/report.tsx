@@ -513,7 +513,7 @@ export default function ReportPage() {
         <div className="mt-8 rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-relaxed text-muted-foreground">
           <Bot className="mr-1.5 inline h-3 w-3" />
           Отчёт сформирован автоматически: детерминированные детекторы + Yandex GPT
-          (модель {`"yandexgpt"`}, folder b1gncpokmh18knpjgadr). Не является основанием
+          (модель {`"yandexgpt"`}). Не является основанием
           для окончательного отказа — результат должен проверить сотрудник СБ.
         </div>
           </TabsContent>

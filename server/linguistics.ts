@@ -52,7 +52,9 @@ function countPhrases(text: string, phrases: string[]): number {
   const t = normalize(text);
   let n = 0;
   for (const p of phrases) {
-    const re = new RegExp(`\\b${p.replace(/[\-\/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`, "gi");
+    const escaped = p.replace(/[\-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+    // \b не работает с кириллицей в JS — используем явные границы по буквам/цифрам.
+    const re = new RegExp(`(?<![а-яёa-z0-9])${escaped}(?![а-яёa-z0-9])`, "gi");
     const m = t.match(re);
     if (m) n += m.length;
   }

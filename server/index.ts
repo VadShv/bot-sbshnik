@@ -4,8 +4,15 @@ import type { Request } from 'express';
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
+import { timingSafeEqual } from "node:crypto";
+import rateLimit from "express-rate-limit";
+import { seedSettingsIfEmpty } from "./settings";
+import { seedPromptsIfEmpty } from "./seedPrompts";
 
 const app = express();
+// За прокси (Railway/Render) — чтобы express-rate-limit корректно читал клиентский IP.
+// При прямом доступе без прокси задайте TRUST_PROXY=0.
+app.set("trust proxy", Number(process.env.TRUST_PROXY ?? 1));
 const httpServer = createServer(app);
 
 declare module "http" {
@@ -25,18 +32,36 @@ app.use(
 
 app.use(express.urlencoded({ extended: false, limit: "15mb" }));
 
+// --- Глобальный лимитёр ДО auth: защита от брутфорса Basic-auth ---
+// Неавторизованные запросы отсекаются auth-промежуткой ниже, не доходя до
+// API-лимитёров в routes.ts, поэтому нужен отдельный лимитёр здесь.
+const authLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Слишком много запросов. Повторите позже." },
+});
+app.use(authLimiter);
+
 // --- Единый парольный замок на весь сервис (HTTP Basic Auth) ---
-const BASIC_USER = process.env.BASIC_AUTH_USER || "admin";
-const BASIC_PASS = process.env.BASIC_AUTH_PASS || "sbshnik";
+// В production креды обязательны и должны быть заданы явно через env.
+// Дефолтные значения оставлены только для локальной разработки.
+const isProd = process.env.NODE_ENV === "production";
+const BASIC_USER = process.env.BASIC_AUTH_USER || (isProd ? "" : "admin");
+const BASIC_PASS = process.env.BASIC_AUTH_PASS || (isProd ? "" : "sbshnik");
 const BASIC_REALM = "Bot SBshnik - password required";
+
+if (isProd && (!BASIC_USER || !BASIC_PASS)) {
+  console.error("FATAL: в production обязательны BASIC_AUTH_USER и BASIC_AUTH_PASS.");
+  process.exit(1);
+}
 
 function timingSafeEq(a: string, b: string): boolean {
   const ab = Buffer.from(a);
   const bb = Buffer.from(b);
   if (ab.length !== bb.length) return false;
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const crypto = require("node:crypto");
-  return crypto.timingSafeEqual(ab, bb);
+  return timingSafeEqual(ab, bb);
 }
 
 app.use((req, res, next) => {
@@ -88,7 +113,11 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        const safe = JSON.stringify(capturedJsonResponse).replace(
+          /"(api[_-]?key|apiKey|password|BASIC_PASS)"\s*:\s*"[^"]*"/gi,
+          '"$1":"••••"',
+        );
+        logLine += ` :: ${safe}`;
       }
 
       log(logLine);
@@ -99,6 +128,8 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  seedSettingsIfEmpty();
+  seedPromptsIfEmpty();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

@@ -1,125 +1,23 @@
 import type { Finding, Evidence, VerificationStep, RedFlag, RecruiterAction, SubcategoryScore, FindingCategory } from "@shared/schema";
 import { isPhantom, stripPhantomText, stripPhantomArray } from "./pipelineAnalyzer";
+import { llmComplete } from "./llm/provider";
+import type { LlmMessage } from "./llm/http";
+import { getPrompt } from "./settings";
 
-const YANDEX_API_KEY = process.env.YANDEX_API_KEY || "";
-const YANDEX_FOLDER_ID = process.env.YANDEX_FOLDER_ID || "b1gncpokmh18knpjgadr";
-const YANDEX_MODEL = process.env.YANDEX_MODEL || "yandexgpt";
+export type YandexMessage = LlmMessage;
 
-// Два эндпоинта Yandex Cloud AI Studio:
-//   1) Foundation Models API (native) — для yandexgpt, yandexgpt-lite, llama, mistral и др.
-//   2) OpenAI-compatible API — обязательно для Qwen3, gpt-oss и новых open-source моделей.
-const ENDPOINT_NATIVE = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion";
-const ENDPOINT_OPENAI = "https://llm.api.cloud.yandex.net/v1/chat/completions";
-
-/** Нужно ли использовать OpenAI-совместимый эндпоинт для этой модели. */
-function requiresOpenAIApi(model: string): boolean {
-  const m = model.toLowerCase();
-  return (
-    m.startsWith("qwen") ||
-    m.startsWith("gpt-oss") ||
-    m.startsWith("deepseek") ||
-    m.startsWith("gemma") ||
-    m.includes("qwen3")
-  );
-}
-
-type YandexMessage = { role: "system" | "user" | "assistant"; text: string };
-
+/** Тонкая обёртка над llmComplete для обратной совместимости существующих вызовов.
+ *  Реальная маршрутизация (активный провайдер + fallback) — в ./llm/provider. */
 export async function yandexComplete(
   messages: YandexMessage[],
   opts: { temperature?: number; maxTokens?: number } = {}
 ): Promise<string> {
-  if (!YANDEX_API_KEY) {
-    throw new Error("YANDEX_API_KEY не задан в окружении сервера.");
-  }
-
-  const modelUri = `gpt://${YANDEX_FOLDER_ID}/${YANDEX_MODEL}/latest`;
-  const useOpenAI = requiresOpenAIApi(YANDEX_MODEL);
-
-  if (useOpenAI) {
-    return await completeViaOpenAI(modelUri, messages, opts);
-  }
-  return await completeViaNative(modelUri, messages, opts);
-}
-
-/** Вызов через native Yandex Foundation Models API (yandexgpt и др.). */
-async function completeViaNative(
-  modelUri: string,
-  messages: YandexMessage[],
-  opts: { temperature?: number; maxTokens?: number }
-): Promise<string> {
-  const body = {
-    modelUri,
-    completionOptions: {
-      stream: false,
-      temperature: opts.temperature ?? 0.2,
-      maxTokens: String(opts.maxTokens ?? 2000),
-      reasoningOptions: { mode: "DISABLED" },
-    },
-    messages,
-  };
-
-  const res = await fetch(ENDPOINT_NATIVE, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Api-Key ${YANDEX_API_KEY}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`Yandex GPT (native) error ${res.status}: ${txt}`);
-  }
-  const data: any = await res.json();
-  const text = data?.result?.alternatives?.[0]?.message?.text;
-  if (!text) throw new Error("Yandex GPT (native): пустой ответ");
-  return text as string;
-}
-
-/** Вызов через OpenAI-совместимый API (Qwen3, gpt-oss и др.). */
-async function completeViaOpenAI(
-  modelUri: string,
-  messages: YandexMessage[],
-  opts: { temperature?: number; maxTokens?: number }
-): Promise<string> {
-  // Конвертация формата сообщений
-  const openaiMessages = messages.map((m) => ({ role: m.role, content: m.text }));
-
-  const body = {
-    model: modelUri,
-    messages: openaiMessages,
-    temperature: opts.temperature ?? 0.2,
-    max_tokens: opts.maxTokens ?? 2000,
-  };
-
-  const res = await fetch(ENDPOINT_OPENAI, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Api-Key ${YANDEX_API_KEY}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`Yandex GPT (OpenAI API) error ${res.status}: ${txt}`);
-  }
-  const data: any = await res.json();
-  const choice = data?.choices?.[0]?.message;
-  // У gpt-oss может быть content=null при reasoning-ответе; у Qwen3 всегда конкретный текст в content.
-  const text: string | null | undefined = choice?.content ?? choice?.reasoning_content;
-  if (!text) {
-    throw new Error(`Yandex GPT (OpenAI API): пустой ответ. finish_reason=${data?.choices?.[0]?.finish_reason ?? "?"}`);
-  }
-  return text as string;
+  return llmComplete(messages, opts);
 }
 
 // ===== Промпт-инженерия: жёсткий СБ-режим + продвинутая методология =====
 
-const SYSTEM_PROMPT = `Ты — ведущий аналитик Службы Безопасности (СБ) корпорации с 10+ летним опытом оценки кандидатов. Ты соединяешь компетенции: HR-due-diligence, forensic-анализ текста, профайлинг, технический скрининг. Твоя работа — глубокая, многоуровневая оценка резюме на риски, фальсификации и накрутку опыта.
+export const DEFAULT_ANALYZE_SYSTEM_PROMPT = `Ты — ведущий аналитик Службы Безопасности (СБ) корпорации с 10+ летним опытом оценки кандидатов. Ты соединяешь компетенции: HR-due-diligence, forensic-анализ текста, профайлинг, технический скрининг. Твоя работа — глубокая, многоуровневая оценка резюме на риски, фальсификации и накрутку опыта.
 
 МЕТОДОЛОГИЯ (обязательна к применению):
 1) Принцип обоснованности: каждый риск-сигнал подкрепляется доказательством одного из типов — quote (дословная цитата), contradiction (противоречие между блоками), absence (отсутствие ожидаемой информации), pattern (структурный/временной паттерн), indirect (косвенный маркер: домен email, префикс телефона, регион).
@@ -134,7 +32,7 @@ const SYSTEM_PROMPT = `Ты — ведущий аналитик Службы Б�
 - Тон сухой, юридический, экспертный. Без комплиментов и маркетинга.
 - ВЕРНИ СТРОГО JSON без markdown и комментариев.`;
 
-const ANALYZE_PROMPT = (resumeText: string, deterministicFindings: Finding[]) => {
+const ANALYZE_PROMPT = (resumeText: string, deterministicFindings: Finding[], jdContent?: string) => {
   const nowIso = new Date().toISOString().slice(0, 10);
   const nowYear = new Date().getUTCFullYear();
   const nowMonth = new Date().getUTCMonth() + 1;
@@ -271,7 +169,12 @@ ${deterministicFindings.length === 0 ? "— ничего автоматичес�
 - recruiterActionPlan — упорядоченный план от must→nice, 3-7 шагов. Это НЕ копия interviewQuestions, а пошаговая инструкция: звонок→техинтервью→референс-чек→документы→OSINT.
 - НЕ ПРИДУМЫВАЙ ЦИТАТЫ — только дословно из текста.
 
+${jdContent ? `==============================
+ТРЕБОВАНИЯ ВАКАНСИИ (JD)
 ==============================
+${jdContent.slice(0, 4000)}
+
+` : ""}==============================
 РЕЗЮМЕ
 ==============================
 """
@@ -414,12 +317,13 @@ function normalizeRecruiterActionPlan(arr: any): RecruiterAction[] {
 
 export async function yandexAnalyze(
   resumeText: string,
-  deterministicFindings: Finding[]
+  deterministicFindings: Finding[],
+  jdContent?: string,
 ): Promise<YandexAnalysis> {
   const raw = await yandexComplete(
     [
-      { role: "system", text: SYSTEM_PROMPT },
-      { role: "user", text: ANALYZE_PROMPT(resumeText, deterministicFindings) },
+      { role: "system", text: getPrompt("analyze_system") ?? DEFAULT_ANALYZE_SYSTEM_PROMPT },
+      { role: "user", text: ANALYZE_PROMPT(resumeText, deterministicFindings, jdContent) },
     ],
     { temperature: 0.15, maxTokens: 7000 }
   );

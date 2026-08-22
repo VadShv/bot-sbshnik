@@ -1,10 +1,11 @@
 import type { Express, Request, Response } from "express";
 import type { Server } from "node:http";
 import multer from "multer";
+import rateLimit from "express-rate-limit";
 import { nanoid } from "nanoid";
 import { storage } from "./storage";
 import { runDetectors, aggregateCategoryScore } from "./detectors";
-import { yandexAnalyze, yandexComplete } from "./yandex";
+import { yandexAnalyze, yandexComplete, type YandexAnalysis } from "./yandex";
 import { runWolfAudit } from "./wolfDetector";
 import { runFitGuard } from "./fitGuard";
 import { runGitHubDeepScan } from "./githubDeepScan";
@@ -40,6 +41,54 @@ import type {
 import { runPipelineAnalysis } from "./pipelineAnalyzer";
 import { runAiDetector, AI_DETECTOR_DEFAULT_THRESHOLD } from "./aiDetector";
 import { runLinguisticAudit } from "./linguistics";
+import {
+  getAppConfigSummary,
+  listProvidersMasked,
+  createProvider,
+  updateProvider,
+  deleteProvider,
+  setActiveProvider,
+  setFallbackProvider,
+  updateThresholds,
+  updateToggles,
+  listPromptVersions,
+  savePromptVersion,
+  activatePromptVersion,
+  listJdTemplates,
+  createJdTemplate,
+  updateJdTemplate,
+  deleteJdTemplate,
+  listAuditLog,
+  getPrompt,
+  getJdTemplate,
+  getToggles,
+  getThresholds,
+} from "./settings";
+import type { PromptKey } from "@shared/schema";
+import { DEFAULT_ANALYZE_SYSTEM_PROMPT } from "./yandex";
+import { WOLF_SYSTEM_PROMPT } from "./wolfDetector";
+import { FIT_GUARD_SYSTEM_PROMPT } from "./fitGuard";
+import { DEFAULT_AIDETECTOR_SYSTEM_PROMPT } from "./aiDetector";
+import { DEFAULT_DEEPSCAN_SYSTEM_PROMPT } from "./githubDeepScan";
+import { DEFAULT_PIPELINE_SYSTEM_PROMPT } from "./pipelineAnalyzer";
+
+const DEFAULT_CHAT_SYSTEM_PROMPT = [
+  "Ты — ассистент службы безопасности по имени bot-sbshnik.",
+  "Отвечай СТРОГО на основании отчётов ниже (базовая проверка, пайплайн, Team Fit, GitHub DeepScan — все вкладки карточки кандидата). Не выдумывай факты.",
+  "Если в отчётах нет ответа на вопрос — прямо скажи: «информация не найдена в отчёте» и предложи шаг верификации.",
+  "ЗАПРЕЩЕНО утверждать «компания не существует/не зарегистрирована/фиктивна/ликвидирована/сайт не открывается/ИНН не найден/пустышка». У тебя нет доступа к Реестрам (ЕГРЮЛ/ИНН) и к сайтам. Единственный допустимый статус: «Информация не найдена», + рекомендуй ручную проверку через ЕГРЮЛ/rusprofile.ru.",
+  "Стиль: лаконично, профессионально, на русском. Можно markdown для списков.",
+].join("\n");
+
+const DEFAULT_PROMPTS: Record<PromptKey, string> = {
+  analyze_system: DEFAULT_ANALYZE_SYSTEM_PROMPT,
+  wolf_system: WOLF_SYSTEM_PROMPT,
+  fitguard_system: FIT_GUARD_SYSTEM_PROMPT,
+  aidetector_system: DEFAULT_AIDETECTOR_SYSTEM_PROMPT,
+  deepscan_system: DEFAULT_DEEPSCAN_SYSTEM_PROMPT,
+  pipeline_system: DEFAULT_PIPELINE_SYSTEM_PROMPT,
+  chat_system: DEFAULT_CHAT_SYSTEM_PROMPT,
+};
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -273,12 +322,206 @@ function buildDefaultActionPlan(
 }
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
+  // --- Rate-limiting: защита от abuse и cost-amplification на дорогих LLM-эндпоинтах ---
+  const llmLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "Слишком много запросов к анализу. Повторите через минуту." },
+  });
+  const apiLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  app.use("/api/", apiLimiter);
+  app.use("/api/analyze", llmLimiter);
+  app.use("/api/pipeline/analyze", llmLimiter);
+  app.use("/api/pipeline/:id/recompute", llmLimiter);
+  app.use("/api/checks/:id/github-deepscan", llmLimiter);
+  app.use("/api/checks/:id/team-fit", llmLimiter);
+  app.use("/api/checks/:id/chat/message", llmLimiter);
+
   app.get("/api/health", async (_req, res) => {
     res.json({
       ok: true,
       yandexConfigured: Boolean(process.env.YANDEX_API_KEY),
       time: Date.now(),
     });
+  });
+
+  // ===================== Личный кабинет: настройки =====================
+  app.get("/api/settings", async (_req, res) => {
+    res.json(getAppConfigSummary());
+  });
+
+  app.put("/api/settings/thresholds", async (req, res) => {
+    try {
+      res.json(updateThresholds(req.body || {}));
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.put("/api/settings/toggles", async (req, res) => {
+    try {
+      res.json(updateToggles(req.body || {}));
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // --- Провайдеры LLM ---
+  app.get("/api/settings/providers", async (_req, res) => {
+    res.json(listProvidersMasked());
+  });
+
+  app.post("/api/settings/providers", async (req, res) => {
+    try {
+      const { name, protocol, endpoint, model, folderId, apiKey, apiKeyEnv } = req.body || {};
+      if (!name || !protocol || !endpoint || !model) {
+        return res.status(400).json({ message: "name, protocol, endpoint, model обязательны" });
+      }
+      if (protocol !== "yandex-native" && protocol !== "openai-compatible") {
+        return res.status(400).json({ message: "protocol: yandex-native | openai-compatible" });
+      }
+      res.status(201).json(
+        createProvider({ name, protocol, endpoint, model, folderId: folderId ?? null, apiKey, apiKeyEnv: apiKeyEnv ?? null }),
+      );
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.put("/api/settings/providers/:id", async (req, res) => {
+    try {
+      const updated = updateProvider(req.params.id, req.body || {});
+      if (!updated) return res.status(404).json({ message: "Провайдер не найден" });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/settings/providers/:id", async (req, res) => {
+    const ok = deleteProvider(req.params.id);
+    if (!ok) return res.status(404).json({ message: "Провайдер не найден" });
+    res.json({ ok: true });
+  });
+
+  app.post("/api/settings/providers/:id/activate", async (req, res) => {
+    const ok = setActiveProvider(req.params.id);
+    if (!ok) return res.status(404).json({ message: "Провайдер не найден" });
+    res.json({ ok: true });
+  });
+
+  app.post("/api/settings/providers/:id/fallback", async (req, res) => {
+    const ok = setFallbackProvider(req.params.id);
+    if (!ok) return res.status(404).json({ message: "Провайдер не найден" });
+    res.json({ ok: true });
+  });
+
+  app.post("/api/settings/fallback/clear", async (_req, res) => {
+    setFallbackProvider(null);
+    res.json({ ok: true });
+  });
+
+  // --- Промпты ---
+  app.get("/api/settings/prompts", async (_req, res) => {
+    res.json(listPromptVersions());
+  });
+
+  app.get("/api/settings/prompts/:key", async (req, res) => {
+    res.json(listPromptVersions(req.params.key as PromptKey));
+  });
+
+  app.post("/api/settings/prompts/:key", async (req, res) => {
+    try {
+      const { content } = req.body || {};
+      if (!content || typeof content !== "string") {
+        return res.status(400).json({ message: "content обязателен (строка)" });
+      }
+      res.status(201).json(savePromptVersion(req.params.key as PromptKey, content));
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/settings/prompts/:key/versions/:v/activate", async (req, res) => {
+    const ok = activatePromptVersion(req.params.key as PromptKey, Number(req.params.v));
+    if (!ok) return res.status(404).json({ message: "Версия не найдена" });
+    res.json({ ok: true });
+  });
+
+  // --- Шаблоны вакансий (JD) ---
+  app.get("/api/settings/jd-templates", async (_req, res) => {
+    res.json(listJdTemplates());
+  });
+
+  app.post("/api/settings/jd-templates", async (req, res) => {
+    try {
+      const { name, content } = req.body || {};
+      if (!name || !content) return res.status(400).json({ message: "name и content обязательны" });
+      res.status(201).json(createJdTemplate(name, content));
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.put("/api/settings/jd-templates/:id", async (req, res) => {
+    const updated = updateJdTemplate(req.params.id, req.body || {});
+    if (!updated) return res.status(404).json({ message: "Шаблон не найден" });
+    res.json(updated);
+  });
+
+  app.delete("/api/settings/jd-templates/:id", async (req, res) => {
+    const ok = deleteJdTemplate(req.params.id);
+    if (!ok) return res.status(404).json({ message: "Шаблон не найден" });
+    res.json({ ok: true });
+  });
+
+  // --- Журнал изменений ---
+  app.get("/api/settings/audit-log", async (req, res) => {
+    const limit = Math.min(500, Number(req.query.limit) || 100);
+    res.json(listAuditLog(limit));
+  });
+
+  // --- Тест-прогон настроек на образце резюме ---
+  app.post("/api/settings/test-run", async (req, res) => {
+    try {
+      const { resumeText, promptKey, jdTemplateId, runLlm } = req.body || {};
+      if (!resumeText || typeof resumeText !== "string") {
+        return res.status(400).json({ message: "resumeText обязателен" });
+      }
+      const det = runDetectors(resumeText, { thresholds: getThresholds() });
+      const key = (promptKey || "analyze_system") as PromptKey;
+      const systemPrompt = getPrompt(key) ?? DEFAULT_PROMPTS[key];
+      const jd = jdTemplateId ? getJdTemplate(jdTemplateId) : null;
+      const result: {
+        detectors: { risks: number; inflation: number; wolves: number };
+        promptKey: PromptKey;
+        systemPrompt: string;
+        jdTemplate: { name: string; content: string } | null;
+        analysis?: unknown;
+      } = {
+        detectors: {
+          risks: det.risks.length,
+          inflation: det.inflation.length,
+          wolves: det.wolves.length,
+        },
+        promptKey: key,
+        systemPrompt,
+        jdTemplate: jd ? { name: jd.name, content: jd.content } : null,
+      };
+      if (runLlm && key === "analyze_system") {
+        result.analysis = await yandexAnalyze(resumeText, [...det.risks, ...det.inflation, ...det.wolves]);
+      }
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
   });
 
   // Извлечение текста из PDF/DOCX
@@ -373,25 +616,50 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         });
       }
 
-      const det = runDetectors(text);
+      const toggles = getToggles();
+      const thresholds = getThresholds();
+      const jdTemplate = req.body?.jdTemplateId ? getJdTemplate(String(req.body.jdTemplateId)) : null;
+      const jdContent = jdTemplate?.content;
+      const det = toggles.detectors
+        ? runDetectors(text, { thresholds })
+        : { risks: [], inflation: [], wolves: [] };
 
       // Параллельно: базовый анализ + Wolf Detector v1.0 + AI Detector (v3.7.0)
       const [llm, wolfAuditResult, aiDetectorResult] = await Promise.all([
-        yandexAnalyze(text, [...det.risks, ...det.inflation, ...det.wolves]),
-        runWolfAudit(text, {}).catch((err) => {
-          console.error("Wolf Detector error:", err);
-          return null;
+        yandexAnalyze(text, [...det.risks, ...det.inflation, ...det.wolves], jdContent).catch((err) => {
+          console.error("Yandex analyze error:", err);
+          return {
+            candidateName: null,
+            executiveSummary: "Автоматический LLM-анализ недоступен. Отчёт построен только на детерминированных детекторах.",
+            confidence: 30,
+            positiveSignals: [],
+            redFlags: [],
+            risks: { score: 0, summary: "LLM недоступен.", confidence: 30, findings: det.risks },
+            inflation: { score: 0, summary: "LLM недоступен.", confidence: 30, findings: det.inflation },
+            wolves: { score: 0, summary: "LLM недоступен.", confidence: 30, findings: det.wolves },
+            interviewQuestions: [],
+            sbRecommendations: [],
+            recruiterActionPlan: [],
+          } as YandexAnalysis;
         }),
-        runAiDetector(text).catch((err) => {
-          console.error("AI Detector error:", err);
-          return null;
-        }),
+        (toggles.wolfAudit
+          ? runWolfAudit(text, { vacancyTitle: jdTemplate?.name, vacancyRequirements: jdContent }).catch((err) => {
+              console.error("Wolf Detector error:", err);
+              return null;
+            })
+          : Promise.resolve(null)),
+        (toggles.aiDetector
+          ? runAiDetector(text, thresholds.aiDetectorThreshold).catch((err) => {
+              console.error("AI Detector error:", err);
+              return null;
+            })
+          : Promise.resolve(null)),
       ]);
 
       // Условный запуск лингвистического слоя при высоком aiScore
       let aiDetectorReport = aiDetectorResult || undefined;
       let baseLinguisticAudit: LinguisticAudit | undefined;
-      if (aiDetectorReport && aiDetectorReport.aiScore >= aiDetectorReport.threshold) {
+      if (toggles.linguistic && aiDetectorReport && aiDetectorReport.aiScore >= aiDetectorReport.threshold) {
         try {
           baseLinguisticAudit = runLinguisticAudit(text, "");
           aiDetectorReport = { ...aiDetectorReport, triggeredLinguistic: true };
@@ -631,8 +899,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!nForm) {
         return res.status(400).json({ message: "Не заполнена форма рекрутера." });
       }
-      const nEtk = normalizeEtk(etk);
-      const nEtkRaw = typeof etkText === "string" ? etkText.slice(0, 200000) : "";
+      const toggles = getToggles();
+      // Тоггл «Верификация опыта (ЭТК)»: если выключен — не передаём ЭТК, LLM вернёт not_checked.
+      const nEtk = toggles.etcVerification ? normalizeEtk(etk) : ({ records: [], source: "none" } as EtkStructured);
+      const nEtkRaw = toggles.etcVerification && typeof etkText === "string" ? etkText.slice(0, 200000) : "";
       // parentCheckId — связь с исходной обычной проверкой (checks.id)
       // С v3.3 пайплайн создаётся ТОЛЬКО на базе существующей базовой проверки.
       if (typeof parentCheckId !== "string" || !parentCheckId.trim()) {
@@ -796,7 +1066,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         linguisticAudit: baseReport.linguisticAudit
           ? {
               verdict: baseReport.linguisticAudit.verdict,
-              riskScore: baseReport.linguisticAudit.riskScore,
+              riskScore: baseReport.linguisticAudit.linguisticRisk,
               summary: baseReport.linguisticAudit.summary,
             }
           : null,
@@ -809,7 +1079,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
             resolution: pipelineReport.resolution,
             verification: pipelineReport.verification,
             motivation: pipelineReport.motivation,
-            culturalFit: pipelineReport.culturalFit,
             loyalty: pipelineReport.loyalty,
             linguisticAudit: pipelineReport.linguisticAudit,
           }
@@ -845,12 +1114,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           }
         : null;
 
+      const chatStatic = getPrompt("chat_system") ?? DEFAULT_CHAT_SYSTEM_PROMPT;
       const systemPrompt = [
-        "Ты — ассистент службы безопасности по имени bot-sbshnik.",
-        "Отвечай СТРОГО на основании отчётов ниже (базовая проверка, пайплайн, Team Fit, GitHub DeepScan — все вкладки карточки кандидата). Не выдумывай факты.",
-        "Если в отчётах нет ответа на вопрос — прямо скажи: «информация не найдена в отчёте» и предложи шаг верификации.",
-        "ЗАПРЕЩЕНО утверждать «компания не существует/не зарегистрирована/фиктивна/ликвидирована/сайт не открывается/ИНН не найден/пустышка». У тебя нет доступа к Реестрам (ЕГРЮЛ/ИНН) и к сайтам. Единственный допустимый статус: «Информация не найдена», + рекомендуй ручную проверку через ЕГРЮЛ/rusprofile.ru.",
-        "Стиль: лаконично, профессионально, на русском. Можно markdown для списков.",
+        chatStatic,
         "",
         "=== БАЗОВЫЙ ОТЧЁТ (JSON) ===",
         JSON.stringify(baseSlim),
@@ -977,6 +1243,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         res.status(404).json({ message: "Проверка не найдена" });
         return;
       }
+      if (!getToggles().teamFit) {
+        return res.status(403).json({ message: "Модуль Team Fit отключён в настройках." });
+      }
       const analysis = await runFitGuard(check.resumeText);
       const saved = await storage.createTeamFitReport({
         id: nanoid(),
@@ -1075,6 +1344,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const handleOverride =
         typeof req.body?.githubHandle === "string" ? req.body.githubHandle : undefined;
 
+      if (!getToggles().githubDeepScan) {
+        return res.status(403).json({ message: "Модуль GitHub DeepScan отключён в настройках." });
+      }
       const analysis = await runGitHubDeepScan({
         resumeText: check.resumeText,
         handleOverride,

@@ -1,4 +1,5 @@
 import { yandexComplete } from "./yandex";
+import { getPrompt, getThresholds } from "./settings";
 import { buildTimeline, formatMonths } from "./timeline";
 import { runLinguisticAudit } from "./linguistics";
 import type {
@@ -27,7 +28,7 @@ import type {
 // Методология и системный промпт
 // ==========================================================
 
-const SYSTEM_PROMPT = `Ты — единый AI-аналитик Службы Безопасности и HR. Твоя задача — за один проход провести три параллельных модуля анализа кандидата (верификация опыта, мотивация, индекс лояльности) и собрать СОГЛАСОВАННУЮ итоговую сводку для руководителя.
+export const DEFAULT_PIPELINE_SYSTEM_PROMPT = `Ты — единый AI-аналитик Службы Безопасности и HR. Твоя задача — за один проход провести три параллельных модуля анализа кандидата (верификация опыта, мотивация, индекс лояльности) и собрать СОГЛАСОВАННУЮ итоговую сводку для руководителя.
 
 ⚠️ КРИТИЧЕСКИ ВАЖНО — ФОРМАТ ОТВЕТА:
 - Ты ОБЯЗАН вернуть JSON строго по предоставленной схеме.
@@ -673,6 +674,7 @@ export function deriveResolution(
     loyalty: LoyaltyScore;
   },
 ): FinalResolution {
+  const th = getThresholds();
   // Собираем условия (только релевантные, дедуплицированные)
   const conditionsSet = new Set<string>();
   if (modules.motivation.redFlags.length) {
@@ -699,18 +701,18 @@ export function deriveResolution(
     };
   }
   // 2) CS < 50 → NOT_RECOMMENDED
-  if (compositeScore < 50) {
+  if (compositeScore < th.csRejectBelow) {
     return {
       code: "NOT_RECOMMENDED",
       label: "❌ НЕ РЕКОМЕНДОВАН",
       compositeScore,
       reason,
       conditions: [],
-      blockingFactor: `Composite Score = ${compositeScore} < 50`,
+      blockingFactor: `Composite Score = ${compositeScore} < ${th.csRejectBelow}`,
     };
   }
   // 3) CS ≥ 70 + not_checked → UNVERIFIED
-  if (compositeScore >= 70 && verificationStatus === "not_checked") {
+  if (compositeScore >= th.csRecommendAbove && verificationStatus === "not_checked") {
     return {
       code: "UNVERIFIED",
       label: "⚠️ РЕКОМЕНДОВАН (опыт не верифицирован)",
@@ -724,7 +726,7 @@ export function deriveResolution(
   }
   // 4) CS ≥ 70 + confirmed/partial → RECOMMENDED
   if (
-    compositeScore >= 70 &&
+    compositeScore >= th.csRecommendAbove &&
     (verificationStatus === "confirmed" || verificationStatus === "partial")
   ) {
     return {
@@ -929,7 +931,7 @@ export async function runPipelineAnalysis(
   try {
     const raw = await yandexComplete(
       [
-        { role: "system", text: SYSTEM_PROMPT },
+        { role: "system", text: getPrompt("pipeline_system") ?? DEFAULT_PIPELINE_SYSTEM_PROMPT },
         { role: "user", text: userPrompt },
       ],
       { temperature: 0, maxTokens: 12000 },

@@ -9,6 +9,7 @@
 // - Вендорный фит целится в российских вендоров промышленного/корпоративного ПО.
 //
 import { yandexComplete } from "./yandex";
+import { getPrompt } from "./settings";
 import { stripPhantomText } from "./pipelineAnalyzer";
 import type {
   TeamFitReport,
@@ -230,7 +231,7 @@ export async function runFitGuard(
   try {
     const raw = await yandexComplete(
       [
-        { role: "system", text: FIT_GUARD_SYSTEM_PROMPT },
+        { role: "system", text: getPrompt("fitguard_system") ?? FIT_GUARD_SYSTEM_PROMPT },
         { role: "user", text: buildUserPrompt(resumeText) },
       ],
       { temperature: 0.3, maxTokens: 6000 },

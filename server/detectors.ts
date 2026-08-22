@@ -1,4 +1,5 @@
-import type { Finding } from "@shared/schema";
+import type { Finding, Thresholds } from "@shared/schema";
+import { DEFAULT_THRESHOLDS } from "./defaults";
 
 // ===== УТИЛИТЫ =====
 
@@ -100,7 +101,7 @@ function endOf(p: Period, now: Date): Date {
 
 // ===== ДЕТЕКТОРЫ РИСКОВ =====
 
-function findingsChronology(text: string, now: Date): Finding[] {
+function findingsChronology(text: string, now: Date, th: Thresholds): Finding[] {
   const findings: Finding[] = [];
   const periods = extractPeriods(text);
   if (periods.length < 2) return findings;
@@ -132,7 +133,7 @@ function findingsChronology(text: string, now: Date): Finding[] {
       const aEnd = endOf(a, now);
       const overlap = Math.min(aEnd.getTime(), endOf(b, now).getTime()) - b.start.getTime();
       const days = overlap / (1000 * 60 * 60 * 24);
-      if (days > 60) {
+      if (days > th.overlapMonths * 30) {
         findings.push({
           id: "overlap",
           title: "Пересечение периодов занятости",
@@ -151,7 +152,7 @@ function findingsChronology(text: string, now: Date): Finding[] {
     const a = sorted[i], b = sorted[i + 1];
     const aEnd = endOf(a, now);
     const gap = (b.start.getTime() - aEnd.getTime()) / (1000 * 60 * 60 * 24);
-    if (gap > 180) {
+    if (gap > th.gapMonths * 30) {
       findings.push({
         id: "gap",
         title: "Необъяснённый пробел в опыте",
@@ -275,7 +276,7 @@ function findingsStopWords(text: string): Finding[] {
 
 // ===== ДЕТЕКТОРЫ НАКРУТКИ ОПЫТА =====
 
-function findingsInflation(text: string, now: Date): Finding[] {
+function findingsInflation(text: string, now: Date, th: Thresholds): Finding[] {
   const findings: Finding[] = [];
   const periods = extractPeriods(text);
 
@@ -288,8 +289,8 @@ function findingsInflation(text: string, now: Date): Finding[] {
   const years = totalMonths / 12;
 
   // Грейд vs стаж
-  const hasSenior = /\b(senior|сеньор|ведущ\w+|главный|lead|principal|tech\s*lead|head\s*of|руководитель\s+отдела|директор|архитектор|architect|CTO|CIO|CPO|CFO)\b/i.test(text);
-  if (hasSenior && years > 0 && years < 3) {
+  const hasSenior = /(?<![а-яА-ЯёЁa-z0-9])(senior|сеньор|ведущ\w+|главный|lead|principal|tech\s*lead|head\s*of|руководитель\s+отдела|директор|архитектор|architect|CTO|CIO|CPO|CFO)(?![а-яА-ЯёЁa-z0-9])/i.test(text);
+  if (hasSenior && years > 0 && years < th.seniorMinYears) {
     findings.push({
       id: "senior-low-exp",
       title: "Senior-грейд при малом стаже",
@@ -302,12 +303,12 @@ function findingsInflation(text: string, now: Date): Finding[] {
   }
 
   // Нереалистичные KPI
-  const kpiMatches = text.match(/(?:на|до|в)\s+(\d{3,5})\s*[%×x]|\bв\s+(\d{2,4})\s*раз/gi);
+  const kpiMatches = text.match(/(?:на|до|в)\s+(\d{3,5})\s*[%×x]|(?<![а-яА-ЯёЁa-z0-9])в\s+(\d{2,4})\s*раз/gi);
   if (kpiMatches && kpiMatches.length > 0) {
     const ev: string[] = [];
     for (const km of kpiMatches.slice(0, 5)) {
       const n = parseInt(km.replace(/\D/g, ""));
-      if ((km.includes("%") && n >= 300) || (/раз/i.test(km) && n >= 10) || /[×x]/i.test(km)) {
+      if ((km.includes("%") && n >= th.kpiPercent) || (/раз/i.test(km) && n >= th.kpiTimes) || /[×x]/i.test(km)) {
         ev.push(km);
       }
     }
@@ -348,10 +349,10 @@ function findingsInflation(text: string, now: Date): Finding[] {
   }
 
   // Стек-инфляция: 25+ технологий
-  const techList = text.match(/\b(Python|TypeScript|JavaScript|Java|C\+\+|C#|Go|Ruby|PHP|Swift|Kotlin|Rust|Scala|React|Vue|Angular|Svelte|Next\.?js|Nuxt|Node\.?js|Express|Django|Flask|FastAPI|Spring|Laravel|Rails|\.NET|PostgreSQL|MySQL|MongoDB|Redis|Elasticsearch|Kafka|RabbitMQ|Docker|Kubernetes|Terraform|AWS|GCP|Azure|Git|Jenkins|Linux|Nginx|GraphQL|REST|gRPC|TensorFlow|PyTorch|Kubernetes|Ansible|Prometheus|Grafana)\b/gi);
+  const techList = text.match(/(?<![a-z0-9])(Python|TypeScript|JavaScript|Java|C\+\+|C#|Go|Ruby|PHP|Swift|Kotlin|Rust|Scala|React|Vue|Angular|Svelte|Next\.?js|Nuxt|Node\.?js|Express|Django|Flask|FastAPI|Spring|Laravel|Rails|\.NET|PostgreSQL|MySQL|MongoDB|Redis|Elasticsearch|Kafka|RabbitMQ|Docker|Kubernetes|Terraform|AWS|GCP|Azure|Git|Jenkins|Linux|Nginx|GraphQL|REST|gRPC|TensorFlow|PyTorch|Kubernetes|Ansible|Prometheus|Grafana)(?![a-z0-9])/gi);
   if (techList) {
     const unique = new Set(techList.map((t) => t.toLowerCase()));
-    if (unique.size >= 25) {
+    if (unique.size >= th.stackInflationCount) {
       findings.push({
         id: "stack-inflation",
         title: "Стек-инфляция",
@@ -365,7 +366,7 @@ function findingsInflation(text: string, now: Date): Finding[] {
   }
 
   // Темп роста: junior→lead за <1.5 года
-  const hasJunior = /\b(junior|джуниор|стажёр|стажер|intern|trainee)\b/i.test(text);
+  const hasJunior = /(?<![а-яА-ЯёЁa-z0-9])(junior|джуниор|стажёр|стажер|intern|trainee)(?![а-яА-ЯёЁa-z0-9])/i.test(text);
   if (hasJunior && hasSenior && years > 0 && years < 3.5) {
     findings.push({
       id: "fast-career-growth",
@@ -394,8 +395,8 @@ function findingsInflation(text: string, now: Date): Finding[] {
   }
 
   // Тайтл-инфляция: "Head of / Director" без подчинённых или в стартапе из <5 чел
-  const titleInfl = /\b(head\s+of|директор|chief|CEO|CTO|CFO)\b/i;
-  const smallCompany = /\b(стартап|startup|команда\s+из\s+[1-4]\s+чел|команда\s+[1-4]\s+чел)/i;
+  const titleInfl = /(?<![а-яА-ЯёЁa-z0-9])(head\s+of|директор|chief|CEO|CTO|CFO)(?![а-яА-ЯёЁa-z0-9])/i;
+  const smallCompany = /(?<![а-яА-ЯёЁa-z0-9])(стартап|startup|команда\s+из\s+[1-4]\s+чел|команда\s+[1-4]\s+чел)/i;
   if (titleInfl.test(text) && smallCompany.test(text)) {
     findings.push({
       id: "title-inflation",
@@ -413,7 +414,7 @@ function findingsInflation(text: string, now: Date): Finding[] {
 
 // ===== ДЕТЕКТОРЫ «ВОЛКОВ» =====
 
-function findingsWolves(text: string, now: Date): Finding[] {
+function findingsWolves(text: string, now: Date, th: Thresholds): Finding[] {
   const findings: Finding[] = [];
   const periods = extractPeriods(text);
 
@@ -421,9 +422,9 @@ function findingsWolves(text: string, now: Date): Finding[] {
   const shortStints = periods.filter((p) => {
     const end = endOf(p, now);
     const months = (end.getTime() - p.start.getTime()) / (1000 * 60 * 60 * 24 * 30);
-    return months > 0 && months < 9;
+    return months > 0 && months < th.shortStintMonths;
   });
-  if (shortStints.length >= 3) {
+  if (shortStints.length >= th.jobHoppingCount) {
     findings.push({
       id: "job-hopping",
       title: "Серийные короткие контракты",
@@ -436,7 +437,7 @@ function findingsWolves(text: string, now: Date): Finding[] {
   }
 
   // Лексика сообщества
-  const wolvesLex = /\b(волк|волчь\w+|офер[а-я]*\s+коллекци|гонка\s+оферов|rate\s+fighter|rate\s*раш|фарм\s+оферов|собес\w+\s+марафон|волчья?\s+стая|1\s+к\s+3|оферхантер|offer\s*hunt)/gi;
+  const wolvesLex = /(?<![а-яА-ЯёЁa-z0-9])(волк|волчь\w+|офер[а-я]*\s+коллекци|гонка\s+оферов|rate\s+fighter|rate\s*раш|фарм\s+оферов|собес\w+\s+марафон|волчья?\s+стая|1\s+к\s+3|оферхантер|offer\s*hunt)/gi;
   const matches = text.match(wolvesLex);
   if (matches && matches.length > 0) {
     findings.push({
@@ -451,7 +452,7 @@ function findingsWolves(text: string, now: Date): Finding[] {
   }
 
   // Признаки коучинга по собесам
-  const coaching = /\b(STAR\s*метод\w*|подготовка\s+к\s+собеседовани|коуч\w+\s+по\s+(?:собес|интервью)|прохождение\s+секций|behavioral\s+prep|system\s+design\s+prep)\b/gi;
+  const coaching = /(?<![а-яА-ЯёЁa-z0-9])(STAR\s*метод\w*|подготовка\s+к\s+собеседовани|коуч\w+\s+по\s+(?:собес|интервью)|прохождение\s+секций|behavioral\s+prep|system\s+design\s+prep)(?![а-яА-ЯёЁa-z0-9])/gi;
   const cm = text.match(coaching);
   if (cm && cm.length >= 2) {
     findings.push({
@@ -476,17 +477,18 @@ export type DetectorResult = {
   wolves: Finding[];
 };
 
-export function runDetectors(text: string): DetectorResult {
+export function runDetectors(text: string, opts?: { thresholds?: Thresholds }): DetectorResult {
   const now = new Date();
+  const th = opts?.thresholds ?? DEFAULT_THRESHOLDS;
   return {
     risks: [
-      ...findingsChronology(text, now),
+      ...findingsChronology(text, now, th),
       ...findingsEducation(text, now),
       ...findingsContacts(text),
       ...findingsStopWords(text),
     ],
-    inflation: findingsInflation(text, now),
-    wolves: findingsWolves(text, now),
+    inflation: findingsInflation(text, now, th),
+    wolves: findingsWolves(text, now, th),
   };
 }
 

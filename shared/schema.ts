@@ -933,3 +933,128 @@ export type SingleStepReport = {
   timeline?: TimelineMetrics;
   rawAnalysisNote?: string;
 };
+
+// ============================================================
+// ЛИЧНЫЙ КАБИНЕТ: настройки, провайдеры LLM, промпты, пороги (M1)
+// ============================================================
+
+// --- Пороги методологии (редактируются через UI) ---
+export type Thresholds = {
+  gapMonths: number;            // перерыв между местами работы
+  overlapMonths: number;        // нахлест параллельных работ
+  shortStintMonths: number;     // короткий контракт
+  jobHoppingCount: number;      // кол-во коротких контрактов для job-hopping
+  stackInflationCount: number;  // кол-во технологий для стек-инфляции
+  seniorMinYears: number;       // мин. стаж для senior
+  kpiPercent: number;           // порог KPI в %
+  kpiTimes: number;             // порог KPI «в N раз»
+  aiDetectorThreshold: number;  // порог AI-детектора
+  csRejectBelow: number;        // CS ниже → NOT_RECOMMENDED
+  csRecommendAbove: number;     // CS выше → RECOMMENDED
+};
+
+// --- Тогглы модулей (вкл/выкл через UI) ---
+export type Toggles = {
+  etcVerification: boolean;     // Верификация опыта (резюме × ЭТК/СФР)
+  detectors: boolean;           // детерминированные детекторы
+  linguistic: boolean;          // лингвистический аудит
+  aiDetector: boolean;          // AI-детектор
+  wolfAudit: boolean;           // Wolf Detector
+  teamFit: boolean;             // Team Fit
+  githubDeepScan: boolean;      // GitHub DeepScan
+};
+
+export type ProviderProtocol = "yandex-native" | "openai-compatible";
+
+export type PromptKey =
+  | "analyze_system"
+  | "wolf_system"
+  | "fitguard_system"
+  | "aidetector_system"
+  | "deepscan_system"
+  | "pipeline_system"
+  | "chat_system";
+
+// --- Провайдеры LLM ---
+export const llmProviders = sqliteTable("llm_providers", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  protocol: text("protocol").notNull(),          // ProviderProtocol
+  endpoint: text("endpoint").notNull(),
+  model: text("model").notNull(),
+  folderId: text("folder_id"),                   // для yandex-native/OAI (nullable)
+  apiKeyCipher: text("api_key_cipher"),          // зашифрованный ключ (nullable)
+  apiKeyNonce: text("api_key_nonce"),
+  apiKeyTag: text("api_key_tag"),
+  apiKeyEnv: text("api_key_env"),                // имя env-var для env-backed (nullable)
+  createdAt: integer("created_at").notNull(),
+});
+
+export const insertLlmProviderSchema = createInsertSchema(llmProviders);
+export type InsertLlmProvider = z.infer<typeof insertLlmProviderSchema>;
+export type LlmProviderRow = typeof llmProviders.$inferSelect;
+
+// --- Версии промптов ---
+export const promptVersions = sqliteTable("prompt_versions", {
+  id: text("id").primaryKey(),
+  promptKey: text("prompt_key").notNull(),       // PromptKey
+  version: integer("version").notNull(),
+  content: text("content").notNull(),
+  isActive: integer("is_active", { mode: "boolean" }).notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+
+export const insertPromptVersionSchema = createInsertSchema(promptVersions);
+export type InsertPromptVersion = z.infer<typeof insertPromptVersionSchema>;
+export type PromptVersionRow = typeof promptVersions.$inferSelect;
+
+// --- Конфиг приложения (одна строка id=1) ---
+export const appConfig = sqliteTable("app_config", {
+  id: integer("id").primaryKey(),
+  thresholdsJson: text("thresholds_json").notNull(),
+  togglesJson: text("toggles_json").notNull(),
+  activeProviderId: text("active_provider_id"),
+  fallbackProviderId: text("fallback_provider_id"),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export type AppConfigRow = typeof appConfig.$inferSelect;
+
+// --- Шаблоны вакансий (JD) ---
+export const jdTemplates = sqliteTable("jd_templates", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  content: text("content").notNull(),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const insertJdTemplateSchema = createInsertSchema(jdTemplates);
+export type InsertJdTemplate = z.infer<typeof insertJdTemplateSchema>;
+export type JdTemplateRow = typeof jdTemplates.$inferSelect;
+
+export type JdTemplate = {
+  id: string; name: string; content: string; createdAt: number; updatedAt: number;
+};
+
+// --- Журнал изменений настроек ---
+export const settingsAuditLog = sqliteTable("settings_audit_log", {
+  id: text("id").primaryKey(),
+  action: text("action").notNull(),
+  field: text("field").notNull(),
+  diffJson: text("diff_json").notNull(),
+  actor: text("actor").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+
+export type SettingsAuditLogRow = typeof settingsAuditLog.$inferSelect;
+export type SettingsAuditLogEntry = {
+  id: string; action: string; field: string; diff: unknown; actor: string; createdAt: number;
+};
+
+// --- Маскированный провайдер для API/UI ---
+export type LlmProviderMasked = {
+  id: string; name: string; protocol: ProviderProtocol;
+  endpoint: string; model: string; folderId: string | null;
+  apiKeyDisplay: string; createdAt: number;
+};
