@@ -59,8 +59,34 @@ import {
   updateJdTemplate,
   deleteJdTemplate,
   listAuditLog,
+  getPrompt,
+  getJdTemplate,
 } from "./settings";
 import type { PromptKey } from "@shared/schema";
+import { DEFAULT_ANALYZE_SYSTEM_PROMPT } from "./yandex";
+import { WOLF_SYSTEM_PROMPT } from "./wolfDetector";
+import { FIT_GUARD_SYSTEM_PROMPT } from "./fitGuard";
+import { DEFAULT_AIDETECTOR_SYSTEM_PROMPT } from "./aiDetector";
+import { DEFAULT_DEEPSCAN_SYSTEM_PROMPT } from "./githubDeepScan";
+import { DEFAULT_PIPELINE_SYSTEM_PROMPT } from "./pipelineAnalyzer";
+
+const DEFAULT_CHAT_SYSTEM_PROMPT = [
+  "Ты — ассистент службы безопасности по имени bot-sbshnik.",
+  "Отвечай СТРОГО на основании отчётов ниже (базовая проверка, пайплайн, Team Fit, GitHub DeepScan — все вкладки карточки кандидата). Не выдумывай факты.",
+  "Если в отчётах нет ответа на вопрос — прямо скажи: «информация не найдена в отчёте» и предложи шаг верификации.",
+  "ЗАПРЕЩЕНО утверждать «компания не существует/не зарегистрирована/фиктивна/ликвидирована/сайт не открывается/ИНН не найден/пустышка». У тебя нет доступа к Реестрам (ЕГРЮЛ/ИНН) и к сайтам. Единственный допустимый статус: «Информация не найдена», + рекомендуй ручную проверку через ЕГРЮЛ/rusprofile.ru.",
+  "Стиль: лаконично, профессионально, на русском. Можно markdown для списков.",
+].join("\n");
+
+const DEFAULT_PROMPTS: Record<PromptKey, string> = {
+  analyze_system: DEFAULT_ANALYZE_SYSTEM_PROMPT,
+  wolf_system: WOLF_SYSTEM_PROMPT,
+  fitguard_system: FIT_GUARD_SYSTEM_PROMPT,
+  aidetector_system: DEFAULT_AIDETECTOR_SYSTEM_PROMPT,
+  deepscan_system: DEFAULT_DEEPSCAN_SYSTEM_PROMPT,
+  pipeline_system: DEFAULT_PIPELINE_SYSTEM_PROMPT,
+  chat_system: DEFAULT_CHAT_SYSTEM_PROMPT,
+};
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -458,6 +484,42 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/settings/audit-log", async (req, res) => {
     const limit = Math.min(500, Number(req.query.limit) || 100);
     res.json(listAuditLog(limit));
+  });
+
+  // --- Тест-прогон настроек на образце резюме ---
+  app.post("/api/settings/test-run", async (req, res) => {
+    try {
+      const { resumeText, promptKey, jdTemplateId, runLlm } = req.body || {};
+      if (!resumeText || typeof resumeText !== "string") {
+        return res.status(400).json({ message: "resumeText обязателен" });
+      }
+      const det = runDetectors(resumeText);
+      const key = (promptKey || "analyze_system") as PromptKey;
+      const systemPrompt = getPrompt(key) ?? DEFAULT_PROMPTS[key];
+      const jd = jdTemplateId ? getJdTemplate(jdTemplateId) : null;
+      const result: {
+        detectors: { risks: number; inflation: number; wolves: number };
+        promptKey: PromptKey;
+        systemPrompt: string;
+        jdTemplate: { name: string; content: string } | null;
+        analysis?: unknown;
+      } = {
+        detectors: {
+          risks: det.risks.length,
+          inflation: det.inflation.length,
+          wolves: det.wolves.length,
+        },
+        promptKey: key,
+        systemPrompt,
+        jdTemplate: jd ? { name: jd.name, content: jd.content } : null,
+      };
+      if (runLlm && key === "analyze_system") {
+        result.analysis = await yandexAnalyze(resumeText, [...det.risks, ...det.inflation, ...det.wolves]);
+      }
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
   });
 
   // Извлечение текста из PDF/DOCX
@@ -1038,12 +1100,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           }
         : null;
 
+      const chatStatic = getPrompt("chat_system") ?? DEFAULT_CHAT_SYSTEM_PROMPT;
       const systemPrompt = [
-        "Ты — ассистент службы безопасности по имени bot-sbshnik.",
-        "Отвечай СТРОГО на основании отчётов ниже (базовая проверка, пайплайн, Team Fit, GitHub DeepScan — все вкладки карточки кандидата). Не выдумывай факты.",
-        "Если в отчётах нет ответа на вопрос — прямо скажи: «информация не найдена в отчёте» и предложи шаг верификации.",
-        "ЗАПРЕЩЕНО утверждать «компания не существует/не зарегистрирована/фиктивна/ликвидирована/сайт не открывается/ИНН не найден/пустышка». У тебя нет доступа к Реестрам (ЕГРЮЛ/ИНН) и к сайтам. Единственный допустимый статус: «Информация не найдена», + рекомендуй ручную проверку через ЕГРЮЛ/rusprofile.ru.",
-        "Стиль: лаконично, профессионально, на русском. Можно markdown для списков.",
+        chatStatic,
         "",
         "=== БАЗОВЫЙ ОТЧЁТ (JSON) ===",
         JSON.stringify(baseSlim),

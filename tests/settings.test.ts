@@ -46,4 +46,12 @@ describe("settings (M1)", () => {
     expect(log.length).toBeGreaterThan(0);
     expect(log.some((e) => e.action === "toggles_update")).toBe(true);
   });
+
+  it("seedPromptsIfEmpty создаёт версии промптов из кода", async () => {
+    const seedPrompts = await import("../server/seedPrompts");
+    seedPrompts.seedPromptsIfEmpty();
+    expect(settings.getPrompt("analyze_system")).not.toBeNull();
+    expect(settings.getPrompt("wolf_system")).not.toBeNull();
+    expect(settings.getPrompt("pipeline_system")).not.toBeNull();
+  });
 });

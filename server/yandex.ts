@@ -2,6 +2,7 @@ import type { Finding, Evidence, VerificationStep, RedFlag, RecruiterAction, Sub
 import { isPhantom, stripPhantomText, stripPhantomArray } from "./pipelineAnalyzer";
 import { llmComplete } from "./llm/provider";
 import type { LlmMessage } from "./llm/http";
+import { getPrompt } from "./settings";
 
 export type YandexMessage = LlmMessage;
 
@@ -16,7 +17,7 @@ export async function yandexComplete(
 
 // ===== Промпт-инженерия: жёсткий СБ-режим + продвинутая методология =====
 
-const SYSTEM_PROMPT = `Ты — ведущий аналитик Службы Безопасности (СБ) корпорации с 10+ летним опытом оценки кандидатов. Ты соединяешь компетенции: HR-due-diligence, forensic-анализ текста, профайлинг, технический скрининг. Твоя работа — глубокая, многоуровневая оценка резюме на риски, фальсификации и накрутку опыта.
+export const DEFAULT_ANALYZE_SYSTEM_PROMPT = `Ты — ведущий аналитик Службы Безопасности (СБ) корпорации с 10+ летним опытом оценки кандидатов. Ты соединяешь компетенции: HR-due-diligence, forensic-анализ текста, профайлинг, технический скрининг. Твоя работа — глубокая, многоуровневая оценка резюме на риски, фальсификации и накрутку опыта.
 
 МЕТОДОЛОГИЯ (обязательна к применению):
 1) Принцип обоснованности: каждый риск-сигнал подкрепляется доказательством одного из типов — quote (дословная цитата), contradiction (противоречие между блоками), absence (отсутствие ожидаемой информации), pattern (структурный/временной паттерн), indirect (косвенный маркер: домен email, префикс телефона, регион).
@@ -315,7 +316,7 @@ export async function yandexAnalyze(
 ): Promise<YandexAnalysis> {
   const raw = await yandexComplete(
     [
-      { role: "system", text: SYSTEM_PROMPT },
+      { role: "system", text: getPrompt("analyze_system") ?? DEFAULT_ANALYZE_SYSTEM_PROMPT },
       { role: "user", text: ANALYZE_PROMPT(resumeText, deterministicFindings) },
     ],
     { temperature: 0.15, maxTokens: 7000 }

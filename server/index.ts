@@ -7,6 +7,7 @@ import { createServer } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import rateLimit from "express-rate-limit";
 import { seedSettingsIfEmpty } from "./settings";
+import { seedPromptsIfEmpty } from "./seedPrompts";
 
 const app = express();
 // За прокси (Railway/Render) — чтобы express-rate-limit корректно читал клиентский IP.
@@ -124,6 +125,7 @@ app.use((req, res, next) => {
 
 (async () => {
   seedSettingsIfEmpty();
+  seedPromptsIfEmpty();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

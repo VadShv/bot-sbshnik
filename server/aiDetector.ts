@@ -11,13 +11,14 @@
 // если aiScore >= threshold, запускается углублённый лингвистический аудит.
 
 import { yandexComplete } from "./yandex";
+import { getPrompt } from "./settings";
 import type {
   AIDetectorReport,
   AIDetectorVerdict,
   AIDetectorMarker,
 } from "@shared/schema";
 
-const SYSTEM_PROMPT = `Ты — эксперт по обнаружению машинно-сгенерированного текста на русском языке.
+export const DEFAULT_AIDETECTOR_SYSTEM_PROMPT = `Ты — эксперт по обнаружению машинно-сгенерированного текста на русском языке.
 Твоя задача — определить, написано ли резюме кандидата человеком самостоятельно
 или обработано/сгенерировано языковой моделью (ChatGPT, YandexGPT, GigaChat и т. п.).
 
@@ -176,7 +177,7 @@ export async function runAiDetector(
   try {
     raw = await yandexComplete(
       [
-        { role: "system", text: SYSTEM_PROMPT },
+        { role: "system", text: getPrompt("aidetector_system") ?? DEFAULT_AIDETECTOR_SYSTEM_PROMPT },
         {
           role: "user",
           text: `Ниже текст резюме кандидата. Проанализируй и верни JSON по описанной схеме.\n\n=== РЕЗЮМЕ ===\n${sample}\n=== /РЕЗЮМЕ ===`,

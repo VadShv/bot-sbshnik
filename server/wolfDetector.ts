@@ -4,6 +4,7 @@
 // ============================================================
 
 import { yandexComplete } from "./yandex";
+import { getPrompt } from "./settings";
 import { isPhantom, stripPhantomText, stripPhantomArray } from "./pipelineAnalyzer";
 import type {
   WolfAudit,
@@ -817,7 +818,7 @@ export async function runWolfAudit(
   try {
     const raw = await yandexComplete(
       [
-        { role: "system", text: WOLF_SYSTEM_PROMPT },
+        { role: "system", text: getPrompt("wolf_system") ?? WOLF_SYSTEM_PROMPT },
         { role: "user", text: buildWolfPrompt(resumeText, context) },
       ],
       { temperature: 0.2, maxTokens: 8000 },

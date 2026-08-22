@@ -20,6 +20,7 @@ import {
   GhCommitHit,
 } from "./github";
 import { yandexComplete } from "./yandex";
+import { getPrompt } from "./settings";
 import { stripPhantomText } from "./pipelineAnalyzer";
 import type {
   GitHubDeepScanReport,
@@ -430,7 +431,7 @@ function computeConfidence(data: GitHubCollected): number {
 
 // ============ LLM-проход: Code Quality Probe + OCEAN-hints ============
 
-const DEEPSCAN_SYSTEM_PROMPT = `Ты — GitHub DeepScan v3.5 внутри «БОТ СБшник».
+export const DEFAULT_DEEPSCAN_SYSTEM_PROMPT = `Ты — GitHub DeepScan v3.5 внутри «БОТ СБшник».
 Твоя задача — по сжатой сводке публичного GitHub-профиля сформулировать:
 1) Code Quality Probe — короткую гипотезу о зрелости кода (на основании выборки названий репозиториев, языков, звёзд, тем).
 2) OCEAN-hints (Big Five) — гипотезы 0..1 для O/C/E/A/N по поведенческим сигналам (стек, регулярность, ко-авторство, PR).
@@ -493,7 +494,7 @@ async function runLlmProbe(
   try {
     const raw = await yandexComplete(
       [
-        { role: "system", text: DEEPSCAN_SYSTEM_PROMPT },
+        { role: "system", text: getPrompt("deepscan_system") ?? DEFAULT_DEEPSCAN_SYSTEM_PROMPT },
         { role: "user", text: buildDeepScanUserPrompt(data, tp, bp) },
       ],
       { temperature: 0.3, maxTokens: 3000 },
