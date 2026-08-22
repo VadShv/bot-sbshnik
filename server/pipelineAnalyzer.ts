@@ -1,5 +1,6 @@
 import { yandexComplete } from "./yandex";
 import { getPrompt, getThresholds } from "./settings";
+import { computeRI, makeSubIndex, computeAuthenticity, verificationToScore, DEFAULT_PIPELINE_RI_WEIGHTS } from "./scoring";
 import { buildTimeline, formatMonths } from "./timeline";
 import { runLinguisticAudit } from "./linguistics";
 import type {
@@ -988,6 +989,18 @@ export async function runPipelineAnalysis(
 
   const linguisticAudit = mergeLinguisticAudit(linguisticBase, parsed?.linguistic);
 
+  // Ф4: единый Risk Index для пайплайна (полосы + драйверы + действие + уверенность)
+  const pipelineRI = computeRI(
+    [
+      makeSubIndex("verification", "Верификация опыта (ЭТК)", verificationToScore(verification.status), verification.summary ? [verification.summary.slice(0, 80)] : []),
+      makeSubIndex("motivation", "Мотивация", 100 - motivation.score, motivation.redFlags.length ? motivation.redFlags.slice(0, 2) : [motivation.summary.slice(0, 80)]),
+      makeSubIndex("loyalty", "Лояльность и стабильность", 100 - loyalty.score, loyalty.flags.slice(0, 3)),
+      makeSubIndex("authenticity", "Аутентичность текста", computeAuthenticity(undefined, linguisticAudit?.linguisticRisk), linguisticAudit ? [`Лингвистика: ${linguisticAudit.verdict}`] : []),
+    ],
+    DEFAULT_PIPELINE_RI_WEIGHTS,
+    { blockingConflict: verification.blockingConflict, verificationStatus: verification.status },
+  );
+
   return {
     version: "3.6",
     candidateName,
@@ -1001,6 +1014,7 @@ export async function runPipelineAnalysis(
     compositeScore,
     resolution,
     executiveSummary,
+    riskIndex: pipelineRI,
     timeline: timeline || undefined,
     rawAnalysisNote: fallbackNote,
   };
