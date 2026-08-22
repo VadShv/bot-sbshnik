@@ -5,10 +5,12 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
 import { timingSafeEqual } from "node:crypto";
+import rateLimit from "express-rate-limit";
 
 const app = express();
 // За прокси (Railway/Render) — чтобы express-rate-limit корректно читал клиентский IP.
-app.set("trust proxy", 1);
+// При прямом доступе без прокси задайте TRUST_PROXY=0.
+app.set("trust proxy", Number(process.env.TRUST_PROXY ?? 1));
 const httpServer = createServer(app);
 
 declare module "http" {
@@ -27,6 +29,18 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false, limit: "15mb" }));
+
+// --- Глобальный лимитёр ДО auth: защита от брутфорса Basic-auth ---
+// Неавторизованные запросы отсекаются auth-промежуткой ниже, не доходя до
+// API-лимитёров в routes.ts, поэтому нужен отдельный лимитёр здесь.
+const authLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Слишком много запросов. Повторите позже." },
+});
+app.use(authLimiter);
 
 // --- Единый парольный замок на весь сервис (HTTP Basic Auth) ---
 // В production креды обязательны и должны быть заданы явно через env.

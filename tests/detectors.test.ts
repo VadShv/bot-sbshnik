@@ -47,11 +47,14 @@ describe("runDetectors — накрутка опыта", () => {
     expect(det.inflation.some((f) => f.id === "senior-low-exp")).toBe(true);
   });
 
-  it("детектит стек-инфляцию (25+ технологий)", () => {
+  it("детектит стек-инфляцию: C++/C#/.NET теперь считаются (фикс \\b)", () => {
+    // 24 «буквенных» технологии + C++/C#/.NET. До фикса \\b последние не матчились
+    // (24 < 25 → детектор не срабатывал); после фикса — 27 ≥ 25.
     const techs = [
-      "Python", "TypeScript", "JavaScript", "Java", "Rails", "PostgreSQL", "Go", "Ruby", "PHP",
-      "Swift", "Kotlin", "Rust", "Scala", "React", "Vue", "Angular", "Svelte", "Next.js",
+      "Python", "TypeScript", "JavaScript", "Java", "Go", "Ruby", "PHP", "Swift",
+      "Kotlin", "Rust", "Scala", "React", "Vue", "Angular", "Svelte", "Next.js",
       "Nuxt", "Node.js", "Express", "Django", "Flask", "FastAPI", "Spring", "Laravel",
+      "C++", "C#", ".NET",
     ].join(", ");
     const det = runDetectors("Senior " + techs + "\n2020-2024");
     expect(det.inflation.some((f) => f.id === "stack-inflation")).toBe(true);
@@ -67,6 +70,23 @@ describe("runDetectors — волки", () => {
     ].join("\n");
     const det = runDetectors(text);
     expect(det.wolves.some((f) => f.id === "job-hopping")).toBe(true);
+  });
+});
+
+describe("runDetectors — кириллические границы (фикс \\b)", () => {
+  it("детектит senior по кириллическому «сеньор»", () => {
+    const det = runDetectors("сеньор разработчик\n2022 - 2023\nКомпания");
+    expect(det.inflation.some((f) => f.id === "senior-low-exp")).toBe(true);
+  });
+
+  it("детектит «волк» в лексике сообщества", () => {
+    const det = runDetectors("резюме кандидат волк");
+    expect(det.wolves.some((f) => f.id === "wolves-lexicon")).toBe(true);
+  });
+
+  it("детектит «в 10 раз» как нереалистичный KPI", () => {
+    const det = runDetectors("опыт 2020-2024\nувеличил выручку в 10 раз");
+    expect(det.inflation.some((f) => f.id === "unrealistic-kpi")).toBe(true);
   });
 });
 

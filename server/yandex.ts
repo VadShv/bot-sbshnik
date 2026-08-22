@@ -26,8 +26,8 @@ function requiresOpenAIApi(model: string): boolean {
 type YandexMessage = { role: "system" | "user" | "assistant"; text: string };
 
 // Таймаут одного запроса к Yandex GPT и число повторных попыток при 429/5xx/абортах.
-const YANDEX_TIMEOUT_MS = 60_000;
-const YANDEX_MAX_RETRIES = 3;
+const YANDEX_TIMEOUT_MS = 30_000;
+const YANDEX_MAX_RETRIES = 2;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));

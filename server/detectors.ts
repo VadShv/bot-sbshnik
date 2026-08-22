@@ -288,7 +288,7 @@ function findingsInflation(text: string, now: Date): Finding[] {
   const years = totalMonths / 12;
 
   // Грейд vs стаж
-  const hasSenior = /\b(senior|сеньор|ведущ\w+|главный|lead|principal|tech\s*lead|head\s*of|руководитель\s+отдела|директор|архитектор|architect|CTO|CIO|CPO|CFO)\b/i.test(text);
+  const hasSenior = /(?<![а-яА-ЯёЁa-z0-9])(senior|сеньор|ведущ\w+|главный|lead|principal|tech\s*lead|head\s*of|руководитель\s+отдела|директор|архитектор|architect|CTO|CIO|CPO|CFO)(?![а-яА-ЯёЁa-z0-9])/i.test(text);
   if (hasSenior && years > 0 && years < 3) {
     findings.push({
       id: "senior-low-exp",
@@ -302,7 +302,7 @@ function findingsInflation(text: string, now: Date): Finding[] {
   }
 
   // Нереалистичные KPI
-  const kpiMatches = text.match(/(?:на|до|в)\s+(\d{3,5})\s*[%×x]|\bв\s+(\d{2,4})\s*раз/gi);
+  const kpiMatches = text.match(/(?:на|до|в)\s+(\d{3,5})\s*[%×x]|(?<![а-яА-ЯёЁa-z0-9])в\s+(\d{2,4})\s*раз/gi);
   if (kpiMatches && kpiMatches.length > 0) {
     const ev: string[] = [];
     for (const km of kpiMatches.slice(0, 5)) {
@@ -348,7 +348,7 @@ function findingsInflation(text: string, now: Date): Finding[] {
   }
 
   // Стек-инфляция: 25+ технологий
-  const techList = text.match(/\b(Python|TypeScript|JavaScript|Java|C\+\+|C#|Go|Ruby|PHP|Swift|Kotlin|Rust|Scala|React|Vue|Angular|Svelte|Next\.?js|Nuxt|Node\.?js|Express|Django|Flask|FastAPI|Spring|Laravel|Rails|\.NET|PostgreSQL|MySQL|MongoDB|Redis|Elasticsearch|Kafka|RabbitMQ|Docker|Kubernetes|Terraform|AWS|GCP|Azure|Git|Jenkins|Linux|Nginx|GraphQL|REST|gRPC|TensorFlow|PyTorch|Kubernetes|Ansible|Prometheus|Grafana)\b/gi);
+  const techList = text.match(/(?<![a-z0-9])(Python|TypeScript|JavaScript|Java|C\+\+|C#|Go|Ruby|PHP|Swift|Kotlin|Rust|Scala|React|Vue|Angular|Svelte|Next\.?js|Nuxt|Node\.?js|Express|Django|Flask|FastAPI|Spring|Laravel|Rails|\.NET|PostgreSQL|MySQL|MongoDB|Redis|Elasticsearch|Kafka|RabbitMQ|Docker|Kubernetes|Terraform|AWS|GCP|Azure|Git|Jenkins|Linux|Nginx|GraphQL|REST|gRPC|TensorFlow|PyTorch|Kubernetes|Ansible|Prometheus|Grafana)(?![a-z0-9])/gi);
   if (techList) {
     const unique = new Set(techList.map((t) => t.toLowerCase()));
     if (unique.size >= 25) {
@@ -365,7 +365,7 @@ function findingsInflation(text: string, now: Date): Finding[] {
   }
 
   // Темп роста: junior→lead за <1.5 года
-  const hasJunior = /\b(junior|джуниор|стажёр|стажер|intern|trainee)\b/i.test(text);
+  const hasJunior = /(?<![а-яА-ЯёЁa-z0-9])(junior|джуниор|стажёр|стажер|intern|trainee)(?![а-яА-ЯёЁa-z0-9])/i.test(text);
   if (hasJunior && hasSenior && years > 0 && years < 3.5) {
     findings.push({
       id: "fast-career-growth",
@@ -394,8 +394,8 @@ function findingsInflation(text: string, now: Date): Finding[] {
   }
 
   // Тайтл-инфляция: "Head of / Director" без подчинённых или в стартапе из <5 чел
-  const titleInfl = /\b(head\s+of|директор|chief|CEO|CTO|CFO)\b/i;
-  const smallCompany = /\b(стартап|startup|команда\s+из\s+[1-4]\s+чел|команда\s+[1-4]\s+чел)/i;
+  const titleInfl = /(?<![а-яА-ЯёЁa-z0-9])(head\s+of|директор|chief|CEO|CTO|CFO)(?![а-яА-ЯёЁa-z0-9])/i;
+  const smallCompany = /(?<![а-яА-ЯёЁa-z0-9])(стартап|startup|команда\s+из\s+[1-4]\s+чел|команда\s+[1-4]\s+чел)/i;
   if (titleInfl.test(text) && smallCompany.test(text)) {
     findings.push({
       id: "title-inflation",
@@ -436,7 +436,7 @@ function findingsWolves(text: string, now: Date): Finding[] {
   }
 
   // Лексика сообщества
-  const wolvesLex = /\b(волк|волчь\w+|офер[а-я]*\s+коллекци|гонка\s+оферов|rate\s+fighter|rate\s*раш|фарм\s+оферов|собес\w+\s+марафон|волчья?\s+стая|1\s+к\s+3|оферхантер|offer\s*hunt)/gi;
+  const wolvesLex = /(?<![а-яА-ЯёЁa-z0-9])(волк|волчь\w+|офер[а-я]*\s+коллекци|гонка\s+оферов|rate\s+fighter|rate\s*раш|фарм\s+оферов|собес\w+\s+марафон|волчья?\s+стая|1\s+к\s+3|оферхантер|offer\s*hunt)/gi;
   const matches = text.match(wolvesLex);
   if (matches && matches.length > 0) {
     findings.push({
@@ -451,7 +451,7 @@ function findingsWolves(text: string, now: Date): Finding[] {
   }
 
   // Признаки коучинга по собесам
-  const coaching = /\b(STAR\s*метод\w*|подготовка\s+к\s+собеседовани|коуч\w+\s+по\s+(?:собес|интервью)|прохождение\s+секций|behavioral\s+prep|system\s+design\s+prep)\b/gi;
+  const coaching = /(?<![а-яА-ЯёЁa-z0-9])(STAR\s*метод\w*|подготовка\s+к\s+собеседовани|коуч\w+\s+по\s+(?:собес|интервью)|прохождение\s+секций|behavioral\s+prep|system\s+design\s+prep)(?![а-яА-ЯёЁa-z0-9])/gi;
   const cm = text.match(coaching);
   if (cm && cm.length >= 2) {
     findings.push({

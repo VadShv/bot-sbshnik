@@ -22,5 +22,7 @@ services:
         sync: false
     disk:
       name: sqlite-data
+      # При смене mountPath на существующем деплое — перенесите data.db на новый диск,
+      # иначе БД стартует пустой.
       mountPath: /data
       sizeGB: 1
