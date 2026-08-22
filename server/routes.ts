@@ -1,10 +1,11 @@
 import type { Express, Request, Response } from "express";
 import type { Server } from "node:http";
 import multer from "multer";
+import rateLimit from "express-rate-limit";
 import { nanoid } from "nanoid";
 import { storage } from "./storage";
 import { runDetectors, aggregateCategoryScore } from "./detectors";
-import { yandexAnalyze, yandexComplete } from "./yandex";
+import { yandexAnalyze, yandexComplete, type YandexAnalysis } from "./yandex";
 import { runWolfAudit } from "./wolfDetector";
 import { runFitGuard } from "./fitGuard";
 import { runGitHubDeepScan } from "./githubDeepScan";
@@ -273,6 +274,28 @@ function buildDefaultActionPlan(
 }
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
+  // --- Rate-limiting: защита от abuse и cost-amplification на дорогих LLM-эндпоинтах ---
+  const llmLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "Слишком много запросов к анализу. Повторите через минуту." },
+  });
+  const apiLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  app.use("/api/", apiLimiter);
+  app.use("/api/analyze", llmLimiter);
+  app.use("/api/pipeline/analyze", llmLimiter);
+  app.use("/api/pipeline/:id/recompute", llmLimiter);
+  app.use("/api/checks/:id/github-deepscan", llmLimiter);
+  app.use("/api/checks/:id/team-fit", llmLimiter);
+  app.use("/api/checks/:id/chat/message", llmLimiter);
+
   app.get("/api/health", async (_req, res) => {
     res.json({
       ok: true,
@@ -377,7 +400,22 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       // Параллельно: базовый анализ + Wolf Detector v1.0 + AI Detector (v3.7.0)
       const [llm, wolfAuditResult, aiDetectorResult] = await Promise.all([
-        yandexAnalyze(text, [...det.risks, ...det.inflation, ...det.wolves]),
+        yandexAnalyze(text, [...det.risks, ...det.inflation, ...det.wolves]).catch((err) => {
+          console.error("Yandex analyze error:", err);
+          return {
+            candidateName: null,
+            executiveSummary: "Автоматический LLM-анализ недоступен. Отчёт построен только на детерминированных детекторах.",
+            confidence: 30,
+            positiveSignals: [],
+            redFlags: [],
+            risks: { score: 0, summary: "LLM недоступен.", confidence: 30, findings: det.risks },
+            inflation: { score: 0, summary: "LLM недоступен.", confidence: 30, findings: det.inflation },
+            wolves: { score: 0, summary: "LLM недоступен.", confidence: 30, findings: det.wolves },
+            interviewQuestions: [],
+            sbRecommendations: [],
+            recruiterActionPlan: [],
+          } as YandexAnalysis;
+        }),
         runWolfAudit(text, {}).catch((err) => {
           console.error("Wolf Detector error:", err);
           return null;
@@ -796,7 +834,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         linguisticAudit: baseReport.linguisticAudit
           ? {
               verdict: baseReport.linguisticAudit.verdict,
-              riskScore: baseReport.linguisticAudit.riskScore,
+              riskScore: baseReport.linguisticAudit.linguisticRisk,
               summary: baseReport.linguisticAudit.summary,
             }
           : null,
@@ -809,7 +847,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
             resolution: pipelineReport.resolution,
             verification: pipelineReport.verification,
             motivation: pipelineReport.motivation,
-            culturalFit: pipelineReport.culturalFit,
             loyalty: pipelineReport.loyalty,
             linguisticAudit: pipelineReport.linguisticAudit,
           }

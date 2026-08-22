@@ -983,7 +983,7 @@ function aggregateFinalDecision(opts: {
     const flags = Array.isArray(github.riskFlags) ? github.riskFlags : [];
     const highFlags = flags.filter((f: any) => f?.severity === "high").length;
     bullets.push(
-      `GitHub DeepScan: профиль @${github.login}` +
+      `GitHub DeepScan: профиль @${github.githubHandle}` +
         (highFlags > 0 ? `, рисков high: ${highFlags}` : ", критических рисков не найдено"),
     );
   }
@@ -1106,7 +1106,7 @@ function CandidateDossierSummary({
       title: "GitHub DeepScan",
       icon: Github,
       available: true,
-      primary: `@${githubDeep.login}`,
+      primary: `@${githubDeep.githubHandle}`,
       secondary: highFlags > 0 ? `риски high: ${highFlags}` : medFlags > 0 ? `риски medium: ${medFlags}` : "критических рисков нет",
       tone: ghTone,
     });
@@ -1302,7 +1302,7 @@ function buildCombinedReportHtml(opts: {
   const githubHtml = githubDeep
     ? section(
         "4. GitHub DeepScan",
-        `<p><b>Профиль:</b> @${escapeHtml(githubDeep.login)}</p>
+        `<p><b>Профиль:</b> @${escapeHtml(githubDeep.githubHandle)}</p>
          <p><b>Сводка:</b> ${escapeHtml((githubDeep as any).summary || "")}</p>
          ${(githubDeep as any).riskFlags && Array.isArray((githubDeep as any).riskFlags) && (githubDeep as any).riskFlags.length > 0
             ? `<p><b>Флаги риска:</b></p><ul>${(githubDeep as any).riskFlags.map((f: any) => `<li>[${escapeHtml(f.severity || "")}] ${escapeHtml(f.type || "")} — ${escapeHtml(f.evidence || "")}</li>`).join("")}</ul>`

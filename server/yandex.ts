@@ -2,7 +2,7 @@ import type { Finding, Evidence, VerificationStep, RedFlag, RecruiterAction, Sub
 import { isPhantom, stripPhantomText, stripPhantomArray } from "./pipelineAnalyzer";
 
 const YANDEX_API_KEY = process.env.YANDEX_API_KEY || "";
-const YANDEX_FOLDER_ID = process.env.YANDEX_FOLDER_ID || "b1gncpokmh18knpjgadr";
+const YANDEX_FOLDER_ID = process.env.YANDEX_FOLDER_ID || "";
 const YANDEX_MODEL = process.env.YANDEX_MODEL || "yandexgpt";
 
 // Два эндпоинта Yandex Cloud AI Studio:
@@ -25,12 +25,50 @@ function requiresOpenAIApi(model: string): boolean {
 
 type YandexMessage = { role: "system" | "user" | "assistant"; text: string };
 
+// Таймаут одного запроса к Yandex GPT и число повторных попыток при 429/5xx/абортах.
+const YANDEX_TIMEOUT_MS = 60_000;
+const YANDEX_MAX_RETRIES = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** fetch с таймаутом и экспоненциальным backoff-ретраем на транзиентные ошибки. */
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  let lastErr: unknown = new Error("Yandex GPT request failed");
+  for (let attempt = 0; attempt <= YANDEX_MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), YANDEX_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { ...init, signal: controller.signal });
+      clearTimeout(timeout);
+      if ((res.status === 429 || res.status >= 500) && attempt < YANDEX_MAX_RETRIES) {
+        await sleep(Math.min(2000, 250 * 2 ** attempt));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      clearTimeout(timeout);
+      lastErr = err;
+      if (attempt < YANDEX_MAX_RETRIES) {
+        await sleep(Math.min(2000, 250 * 2 ** attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
 export async function yandexComplete(
   messages: YandexMessage[],
   opts: { temperature?: number; maxTokens?: number } = {}
 ): Promise<string> {
   if (!YANDEX_API_KEY) {
     throw new Error("YANDEX_API_KEY не задан в окружении сервера.");
+  }
+  if (!YANDEX_FOLDER_ID) {
+    throw new Error("YANDEX_FOLDER_ID не задан в окружении сервера.");
   }
 
   const modelUri = `gpt://${YANDEX_FOLDER_ID}/${YANDEX_MODEL}/latest`;
@@ -59,7 +97,7 @@ async function completeViaNative(
     messages,
   };
 
-  const res = await fetch(ENDPOINT_NATIVE, {
+  const res = await fetchWithRetry(ENDPOINT_NATIVE, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -94,7 +132,7 @@ async function completeViaOpenAI(
     max_tokens: opts.maxTokens ?? 2000,
   };
 
-  const res = await fetch(ENDPOINT_OPENAI, {
+  const res = await fetchWithRetry(ENDPOINT_OPENAI, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
