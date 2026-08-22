@@ -12,6 +12,7 @@ import About from "@/pages/about";
 import Modules from "@/pages/modules";
 import Pipeline from "@/pages/pipeline";
 import PipelineReportPage from "@/pages/pipeline-report";
+import Settings from "@/pages/settings";
 
 function AppRouter() {
   return (
@@ -23,6 +24,7 @@ function AppRouter() {
       <Route path="/history" component={History} />
       <Route path="/modules" component={Modules} />
       <Route path="/about" component={About} />
+      <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
   );

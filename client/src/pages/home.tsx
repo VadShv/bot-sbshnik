@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useLocation, Link } from "wouter";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, apiRequestForm } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,6 +11,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Header } from "@/components/Header";
 import {
@@ -30,6 +32,8 @@ export default function Home() {
   const [fileName, setFileName] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const [jdTemplateId, setJdTemplateId] = useState<string>("none");
+  const jdList = useQuery<any[]>({ queryKey: ["/api/settings/jd-templates"] });
 
   const extractMut = useMutation({
     mutationFn: async (file: File) => {
@@ -53,8 +57,8 @@ export default function Home() {
   });
 
   const analyzeMut = useMutation({
-    mutationFn: async (resumeText: string) => {
-      const res = await apiRequest("POST", "/api/analyze", { text: resumeText });
+    mutationFn: async (vars: { text: string; jdTemplateId?: string }) => {
+      const res = await apiRequest("POST", "/api/analyze", { text: vars.text, jdTemplateId: vars.jdTemplateId });
       return res.json() as Promise<{ id: string; report: FullReport }>;
     },
     onSuccess: (d) => {
@@ -209,6 +213,19 @@ export default function Home() {
             disabled={loading}
           />
 
+          {jdList.data && jdList.data.length > 0 && (
+            <div className="mt-3 flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">Вакансия (JD):</Label>
+              <Select value={jdTemplateId} onValueChange={setJdTemplateId}>
+                <SelectTrigger className="w-72 h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">без вакансии</SelectItem>
+                  {jdList.data.map((j) => <SelectItem key={j.id} value={j.id}>{j.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs text-muted-foreground">
               {tooShort
@@ -218,7 +235,7 @@ export default function Home() {
             <Button
               size="lg"
               disabled={loading || tooShort}
-              onClick={() => analyzeMut.mutate(text)}
+              onClick={() => analyzeMut.mutate({ text, jdTemplateId: jdTemplateId !== "none" ? jdTemplateId : undefined })}
               data-testid="button-analyze"
               className="transition-all duration-200 hover:shadow-[0_8px_24px_-10px_hsl(var(--primary)/0.6)] hover:-translate-y-0.5 active:translate-y-0"
             >

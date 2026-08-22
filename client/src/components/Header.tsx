@@ -8,6 +8,7 @@ export function Header() {
     { href: "/", label: "Новая проверка" },
     { href: "/history", label: "История" },
     { href: "/modules", label: "Модули" },
+    { href: "/settings", label: "Кабинет" },
     { href: "/about", label: "Методика" },
   ];
   return (
