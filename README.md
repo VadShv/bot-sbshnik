@@ -48,8 +48,12 @@ npm start
 | `YANDEX_FOLDER_ID` | ID каталога в Yandex Cloud |
 | `YANDEX_MODEL` | Модель (по умолчанию `yandexgpt`) |
 | `BASIC_AUTH_USER` | Логин базовой HTTP-авторизации |
-| `BASIC_AUTH_PASS` | Пароль базовой HTTP-авторизации |
+| `BASIC_AUTH_PASS` | Пароль базовой HTTP-авторизации (обязателен в production) |
 | `PORT` | Порт сервера (по умолчанию `5000`) |
+| `ENCRYPTION_KEY` | Мастер-ключ (32 байта hex) для шифрования API-ключей провайдеров в БД |
+| `DATABASE_PATH` | Путь к SQLite (по умолчанию `data.db`; на Cloud.ru/Railway — `/data/data.db`) |
+| `GITHUB_TOKEN` | Опционально, для GitHub DeepScan (60→5000 req/ч) |
+| `TRUST_PROXY` | Уровень доверия прокси (по умолчанию `1`; `0` — без прокси) |
 
 ## Деплой на Railway.app
 
@@ -71,6 +75,26 @@ npm start
 4. Укажите секретные переменные: `YANDEX_API_KEY`, `YANDEX_FOLDER_ID`, `BASIC_AUTH_USER`, `BASIC_AUTH_PASS`
 5. Нажмите **Apply** — через 3-5 минут приложение будет доступно на `https://bot-sbshnik.onrender.com`
 
+## Деплой на Cloud.ru (ВМ + Docker)
+
+Подробно — в [`docs/DEPLOY-cloudru.md`](docs/DEPLOY-cloudru.md). Кратко:
+```bash
+cp .env.example .env.docker   # заполнить BASIC_AUTH_*, ENCRYPTION_KEY, YANDEX_*
+docker compose up -d --build
+```
+Мультистейдж-`Dockerfile` (Node 22, сборка better-sqlite3), SQLite на постоянном диске `/data`, nginx + TLS.
+
+## Личный кабинет (`/settings`)
+
+Админ-панель за Basic-auth для управления без правки кода:
+- **Провайдеры LLM** — Yandex + Cloud.ru (+ любые OpenAI-compatible), активный + fallback; ключи шифруются at-rest.
+- **Промпты** — редактор 7 SYSTEM-промптов с версионированием и rollback.
+- **Пороги** — gap/overlap/shortStint/stack/senior/KPI/CS и др.
+- **Тогглы** — вкл/выкл верификации ЭТК и модулей (детекторы/лингвистика/AI/Wolf/TeamFit/GitHub).
+- **Вакансии (JD)** — шаблоны, подставляемые в анализ/Wolf.
+- **Журнал** — аудит изменений настроек.
+- **Тест-прогон** — проверка настроек на образце резюме.
+
 ## Структура проекта
 
 ```
@@ -81,11 +105,19 @@ bot-sbshnik/
 │       ├── lib/     # queryClient, types, utils
 │       └── components/
 ├── server/          # Express backend
-│   ├── index.ts     # точка входа
-│   ├── routes.ts    # API маршруты
-│   └── storage.ts   # работа с БД
+│   ├── index.ts     # точка входа + auth + rate-limit
+│   ├── routes.ts    # API маршруты (вкл. /api/settings)
+│   ├── storage.ts   # Drizzle + миграции
+│   ├── settings.ts  # настройки (кэш, мутации, audit log, seed)
+│   ├── defaults.ts  # дефолты порогов/тогглов (без БД)
+│   ├── seedPrompts.ts
+│   ├── llm/         # провайдеры LLM (provider.ts, http.ts)
+│   ├── lib/crypto.ts# AES-256-GCM для секретов
+│   └── …            # detectors, linguistics, wolfDetector, pipelineAnalyzer и др.
 ├── shared/          # общие TS-типы и Drizzle-схема
 ├── script/build.ts  # скрипт сборки (esbuild + vite)
+├── Dockerfile       # Cloud.ru / Docker
+├── docker-compose.yml
 └── render.yaml      # конфигурация Render
 ```
 
@@ -96,6 +128,9 @@ bot-sbshnik/
 - `POST /api/analyze` — запуск обычной проверки
 - `POST /api/pipeline/analyze` — запуск полного пайплайна (принимает `parentCheckId`)
 - `GET /api/pipeline/:id` — детали пайплайн-отчёта
+- `GET /api/settings` — сводка настроек (провайдеры/промпты/пороги/тогглы)
+- `/api/settings/{providers,prompts,thresholds,toggles,jd-templates,audit-log}` — управление личным кабинетом
+- `POST /api/settings/test-run` — тест-прогон настроек на образце резюме
 
 ## Методика
 

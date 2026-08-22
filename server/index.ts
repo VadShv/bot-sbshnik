@@ -113,7 +113,11 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        const safe = JSON.stringify(capturedJsonResponse).replace(
+          /"(api[_-]?key|apiKey|password|BASIC_PASS)"\s*:\s*"[^"]*"/gi,
+          '"$1":"••••"',
+        );
+        logLine += ` :: ${safe}`;
       }
 
       log(logLine);

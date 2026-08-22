@@ -151,3 +151,14 @@ cliche / symmetry / smoothness / vocabulary / structure / hedging. `threshold=60
 7. **Этика**: Team Fit — гипотезы, не диагноз; нет выводов по защищённым классам
    (раса/пол/возраст/религия/здоровье).
 8. **Graceful degradation**: у каждого LLM-модуля есть консервативный фолбэк.
+
+## 7. Конфигурируемость (личный кабинет, M1–M7)
+Пороги, тогглы, промпты и провайдеры LLM управляются через UI (`/settings`) без правки кода:
+- **Пороги** (см. 2.1, 3.3): `gapMonths`, `overlapMonths`, `shortStintMonths`, `jobHoppingCount`, `stackInflationCount`, `seniorMinYears`, `kpiPercent`, `kpiTimes`, `aiDetectorThreshold`, `csRejectBelow`, `csRecommendAbove` — хранятся в БД, дефолты в `server/defaults.ts`.
+- **Тогглы**: верификация опыта (ЭТК) и модули (детекторы/лингвистика/AI-детектор/Wolf/TeamFit/GitHub DeepScan) — вкл/выкл.
+- **Промпты**: 7 SYSTEM-промптов с версионированием и rollback; пустая версия → кодовый дефолт.
+- **Провайдеры**: Yandex + Cloud.ru (+ OpenAI-compatible), активный + fallback; ключи шифруются at-rest (AES-256-GCM, `ENCRYPTION_KEY`).
+- **Шаблоны вакансий (JD)**: подставляются в контекст анализа/Wolf.
+- **Журнал**: аудит всех изменений настроек.
+
+Изменения применяются без перезапуска (in-memory кэш инвалидируется при мутациях).
