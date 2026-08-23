@@ -13,25 +13,23 @@ import type {
 } from "@shared/schema";
 
 export const RI_BANDS: { band: Band; min: number; max: number; label: string; action: string }[] = [
-  { band: "low", min: 0, max: 29, label: "Низкий", action: "Рутинная проверка" },
-  { band: "moderate", min: 30, max: 54, label: "Умеренный", action: "Целевая верификация 1–2 пунктов" },
-  { band: "elevated", min: 55, max: 79, label: "Повышенный", action: "Углублённая проверка + reference-check" },
-  { band: "high", min: 80, max: 100, label: "Высокий", action: "Не рекомендовать или спец-проверка" },
+  { band: "green", min: 0, max: 24, label: "Не вызывает вопросов", action: "Рутинная проверка не требуется" },
+  { band: "yellow", min: 25, max: 49, label: "Факты или периоды требуют проверки", action: "Проверить отдельные факты/периоды" },
+  { band: "red", min: 50, max: 100, label: "Факты или периоды требуют тщательной проверки", action: "Тщательная проверка + reference-check" },
 ];
 
 export const DECISION_LABELS: Record<Decision, string> = {
   recommend: "Рекомендовать",
-  verify: "Нужна верификация",
-  conditional: "Условно",
+  verify: "Требует проверки",
+  conditional: "Требует тщательной проверки",
   reject: "Не рекомендовать",
 };
 
 export function bandFromScore(score: number): Band {
   const s = Math.max(0, Math.min(100, Math.round(score)));
-  if (s >= 80) return "high";
-  if (s >= 55) return "elevated";
-  if (s >= 30) return "moderate";
-  return "low";
+  if (s >= 50) return "red";
+  if (s >= 25) return "yellow";
+  return "green";
 }
 export function bandLabel(b: Band): string {
   return RI_BANDS.find((x) => x.band === b)!.label;
@@ -47,9 +45,8 @@ export function decisionFromRI(
   if (opts.blockingConflict) return "reject";
   const b = bandFromScore(score);
   let d: Decision;
-  if (b === "high") d = "reject";
-  else if (b === "elevated") d = "conditional";
-  else if (b === "moderate") d = "verify";
+  if (b === "red") d = "conditional";
+  else if (b === "yellow") d = "verify";
   else d = "recommend";
   // не верифицирован → строже на ступень
   if (opts.verificationStatus === "not_checked") {

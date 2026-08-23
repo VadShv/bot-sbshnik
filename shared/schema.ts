@@ -1064,7 +1064,7 @@ export type LlmProviderMasked = {
 // ============================================================
 // МОДЕЛЬ СКОРИНГА v2 — Risk Index (полосы + драйверы + действие)
 // ============================================================
-export type Band = "low" | "moderate" | "elevated" | "high";
+export type Band = "green" | "yellow" | "red";
 export type Decision = "recommend" | "verify" | "conditional" | "reject";
 export type ConfidenceLevel = "high" | "medium" | "low";
 

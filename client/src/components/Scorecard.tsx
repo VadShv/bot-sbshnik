@@ -3,10 +3,9 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 const BAND_STYLE: Record<Band, { color: string; emoji: string }> = {
-  low: { color: "text-green-600", emoji: "🟢" },
-  moderate: { color: "text-yellow-600", emoji: "🟡" },
-  elevated: { color: "text-orange-600", emoji: "🟠" },
-  high: { color: "text-red-600", emoji: "🔴" },
+  green: { color: "text-green-600", emoji: "🟢" },
+  yellow: { color: "text-yellow-600", emoji: "🟡" },
+  red: { color: "text-red-600", emoji: "🔴" },
 };
 
 const DECISION_LABEL: Record<Decision, string> = {

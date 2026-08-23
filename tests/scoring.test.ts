@@ -25,24 +25,22 @@ function f(type: EvidenceType): Finding {
 }
 
 describe("scoring v2 (Risk Index)", () => {
-  it("bandFromScore: 4 полосы + clamp", () => {
-    expect(bandFromScore(0)).toBe("low");
-    expect(bandFromScore(29)).toBe("low");
-    expect(bandFromScore(30)).toBe("moderate");
-    expect(bandFromScore(54)).toBe("moderate");
-    expect(bandFromScore(55)).toBe("elevated");
-    expect(bandFromScore(79)).toBe("elevated");
-    expect(bandFromScore(80)).toBe("high");
-    expect(bandFromScore(100)).toBe("high");
-    expect(bandFromScore(150)).toBe("high");
-    expect(bandFromScore(-5)).toBe("low");
+  it("bandFromScore: 3 полосы + clamp", () => {
+    expect(bandFromScore(0)).toBe("green");
+    expect(bandFromScore(24)).toBe("green");
+    expect(bandFromScore(25)).toBe("yellow");
+    expect(bandFromScore(49)).toBe("yellow");
+    expect(bandFromScore(50)).toBe("red");
+    expect(bandFromScore(100)).toBe("red");
+    expect(bandFromScore(150)).toBe("red");
+    expect(bandFromScore(-5)).toBe("green");
   });
 
   it("decisionFromRI: полосы + blocking + not_checked", () => {
     expect(decisionFromRI(10)).toBe("recommend");
     expect(decisionFromRI(40)).toBe("verify");
     expect(decisionFromRI(60)).toBe("conditional");
-    expect(decisionFromRI(90)).toBe("reject");
+    expect(decisionFromRI(90)).toBe("conditional");
     expect(decisionFromRI(10, { blockingConflict: true })).toBe("reject");
     expect(decisionFromRI(10, { verificationStatus: "not_checked" })).toBe("verify");
     expect(decisionFromRI(40, { verificationStatus: "not_checked" })).toBe("conditional");
@@ -68,7 +66,7 @@ describe("scoring v2 (Risk Index)", () => {
     );
     // 0.3*80 + 0.25*40 + 0.2*90 + 0.25*95 = 75.75 → 76
     expect(ri.score).toBe(76);
-    expect(ri.band).toBe("elevated");
+    expect(ri.band).toBe("red");
     expect(ri.decision).toBe("conditional");
     expect(ri.drivers.length).toBeLessThanOrEqual(3);
     expect(ri.subIndices).toHaveLength(4);
