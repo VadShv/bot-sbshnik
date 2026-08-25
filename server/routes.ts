@@ -41,6 +41,7 @@ import type {
 import { runPipelineAnalysis } from "./pipelineAnalyzer";
 import { runAiDetector, AI_DETECTOR_DEFAULT_THRESHOLD } from "./aiDetector";
 import { runLinguisticAudit } from "./linguistics";
+import { computeRI, computeAuthenticity, makeSubIndex, driversFromFindings, DEFAULT_RI_WEIGHTS } from "./scoring";
 import {
   getAppConfigSummary,
   listProvidersMasked,
@@ -659,10 +660,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       // Условный запуск лингвистического слоя при высоком aiScore
       let aiDetectorReport = aiDetectorResult || undefined;
       let baseLinguisticAudit: LinguisticAudit | undefined;
-      if (toggles.linguistic && aiDetectorReport && aiDetectorReport.aiScore >= aiDetectorReport.threshold) {
+      // Ф3: лингвистический аудит выполняется всегда (когда модуль включён), без gating по aiScore.
+      if (toggles.linguistic) {
         try {
           baseLinguisticAudit = runLinguisticAudit(text, "");
-          aiDetectorReport = { ...aiDetectorReport, triggeredLinguistic: true };
+          if (aiDetectorReport) aiDetectorReport = { ...aiDetectorReport, triggeredLinguistic: true };
         } catch (err) {
           console.error("Linguistic audit (base check) error:", err);
         }
@@ -700,6 +702,30 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const allFindings = [...risksAll, ...inflationAll, ...wolvesAll];
       const subcategoryBreakdown = buildSubcategoryBreakdown(allFindings);
 
+      // Ф1/Ф4: интерпретируемый Risk Index (полосы + драйверы + действие + уверенность)
+      const authenticityScore = computeAuthenticity(aiDetectorReport?.aiScore, baseLinguisticAudit?.linguisticRisk);
+      const behaviorScore = wolfAuditResult
+        ? Math.max(wolvesScore, Math.round((wolfAuditResult.wolfIndex / 3) * 100))
+        : wolvesScore;
+      const authenticityDrivers: string[] = [
+        aiDetectorReport ? `AI: ${aiDetectorReport.verdict}` : null,
+        baseLinguisticAudit ? `Лингвистика: ${baseLinguisticAudit.verdict}` : null,
+      ].filter(Boolean) as string[];
+      const behaviorDrivers: string[] = [
+        ...driversFromFindings(wolvesAll, 2),
+        ...(wolfAuditResult?.topFindings?.slice(0, 1).map((t) => t.title) || []),
+      ];
+      const riskIndex = computeRI(
+        [
+          makeSubIndex("chronology", "Хронология и контакты", riskScore, driversFromFindings(risksAll)),
+          makeSubIndex("qualification", "Квалификация", inflationScore, driversFromFindings(inflationAll)),
+          makeSubIndex("authenticity", "Аутентичность текста", authenticityScore, authenticityDrivers),
+          makeSubIndex("behavior", "Поведение", behaviorScore, behaviorDrivers),
+        ],
+        DEFAULT_RI_WEIGHTS,
+        { findings: allFindings },
+      );
+
       // Action plan: берём от LLM, если пустой — генерируем шаблонный
       const recruiterActionPlan =
         llm.recruiterActionPlan && llm.recruiterActionPlan.length > 0
@@ -715,6 +741,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         totalScore,
         verdict,
         confidence: avgConfidence,
+        riskIndex,
         executiveSummary: llm.executiveSummary,
         risks: {
           score: riskScore,

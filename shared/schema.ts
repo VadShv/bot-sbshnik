@@ -612,6 +612,7 @@ export type FullReport = {
   wolfAudit?: WolfAudit;                      // Wolf Detector v1.0
   aiDetector?: AIDetectorReport;              // v3.7.0 — детектор машинной обработки
   linguisticAudit?: LinguisticAudit;          // v3.7.0 — запускается условно при высоком aiScore
+  riskIndex?: RiskIndex;                       // v2 — интерпретируемый скоринг (полосы + драйверы + действие)
   createdAt: number;
 };
 
@@ -931,6 +932,7 @@ export type SingleStepReport = {
   resolution: FinalResolution;
   executiveSummary?: ExecutiveSummary;
   timeline?: TimelineMetrics;
+  riskIndex?: RiskIndex;          // v2 — единый интерпретируемый скоринг для пайплайна
   rawAnalysisNote?: string;
 };
 
@@ -1057,4 +1059,34 @@ export type LlmProviderMasked = {
   id: string; name: string; protocol: ProviderProtocol;
   endpoint: string; model: string; folderId: string | null;
   apiKeyDisplay: string; createdAt: number;
+};
+
+// ============================================================
+// МОДЕЛЬ СКОРИНГА v2 — Risk Index (полосы + драйверы + действие)
+// ============================================================
+export type Band = "green" | "yellow" | "red";
+export type Decision = "recommend" | "verify" | "conditional" | "reject";
+export type ConfidenceLevel = "high" | "medium" | "low";
+
+export type SubIndexKey =
+  | "chronology" | "qualification" | "authenticity" | "behavior"
+  | "verification" | "motivation" | "loyalty";
+
+export type SubIndex = {
+  key: SubIndexKey;
+  label: string;
+  score: number;        // 0–100
+  band: Band;
+  drivers: string[];    // 1–3 коротких драйвера
+};
+
+export type RiskIndex = {
+  score: number;            // 0–100
+  band: Band;
+  label: string;            // Низкий / Умеренный / Повышенный / Высокий
+  action: string;           // действие по умолчанию
+  decision: Decision;       // Рекомендовать / Нужна верификация / Условно / Не рекомендовать
+  confidence: ConfidenceLevel;
+  subIndices: SubIndex[];
+  drivers: string[];        // топ-драйверы по всем измерениям
 };

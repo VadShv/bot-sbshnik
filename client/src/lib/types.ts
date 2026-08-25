@@ -87,6 +87,13 @@ export type {
   GhOceanHints,
   GhEvidenceLink,
   GhLanguageUsage,
+  // Scoring v2 — Risk Index
+  Band,
+  Decision,
+  ConfidenceLevel,
+  SubIndexKey,
+  SubIndex,
+  RiskIndex,
 } from "@shared/schema";
 
 export type CheckListItem = {

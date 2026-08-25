@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import { ScoreGauge } from "@/components/ScoreGauge";
+import { Scorecard } from "@/components/Scorecard";
 import { FindingCard } from "@/components/FindingCard";
 import { WolfReport } from "@/components/WolfReport";
 import { AiDetectorReportBlock } from "@/components/AiDetectorReport";
@@ -165,6 +166,8 @@ export default function ReportPage() {
             </div>
           </div>
         </Card>
+
+        {r.riskIndex && <Scorecard ri={r.riskIndex} />}
 
         {/* ============ 3 ВКЛАДКИ v3.3 ============ */}
         <Tabs defaultValue="base" className="mb-4 print:hidden">

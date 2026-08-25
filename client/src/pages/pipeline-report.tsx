@@ -4,6 +4,7 @@ import { Header } from "@/components/Header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PipelineReport } from "@/components/PipelineReport";
+import { Scorecard } from "@/components/Scorecard";
 import { ArrowLeft, Download, Printer, Workflow, FileSearch } from "lucide-react";
 import type { SingleStepReport } from "@/lib/types";
 import { useMemo } from "react";
@@ -115,6 +116,8 @@ export default function PipelineReportPage() {
             </div>
           </div>
         </Card>
+
+        {data.report.riskIndex && <Scorecard ri={data.report.riskIndex} />}
 
         <PipelineReport
           report={data.report}
